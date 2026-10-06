@@ -17,6 +17,9 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <!-- PDF.js for PDF Parsing & Import -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <!-- Firebase (v8 compat for simpler synchronous setup) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
     body {
@@ -278,8 +281,8 @@
       return 0;
     }
 
-    // URL RESMI WEB APP GOOGLE APPS SCRIPT (DATABASE CLOUD SIBOS V1)
-    const SIBOS_OFFICIAL_GAS_URL = "https://script.google.com/macros/s/AKfycbzAPOi8SxKEjyhyMhcIP12tjlujnZWZOZ9YeH_IZQW0_rag2dnFBgGWaFj_MW4X8kkt/exec";
+    // URL RESMI DATABASE CLOUD SIBOS V1 (FIREBASE REALTIME DATABASE)
+    const SIBOS_OFFICIAL_GAS_URL = "https://sibos-54bcc-default-rtdb.asia-southeast1.firebasedatabase.app/";
     
     function AuthPage({ accounts, onLogin, onRegister, onUpdateAccounts, appsScriptUrl, onSaveAppsScriptUrl, onFetchAccountsFromCloud }) {
       const [tab, setTab] = useState("login");
@@ -1071,7 +1074,13 @@
 
     function App() {
       const [appsScriptUrl, setAppsScriptUrl] = useState(() => {
-        return localStorage.getItem("bos_apps_script_url") || SIBOS_OFFICIAL_GAS_URL;
+        let savedUrl = localStorage.getItem("bos_apps_script_url");
+        // Jika masih kosong atau menggunakan URL Apps Script lama, paksa ganti ke Firebase
+        if (!savedUrl || savedUrl.includes("script.google.com/macros/s/")) {
+           localStorage.setItem("bos_apps_script_url", SIBOS_OFFICIAL_GAS_URL);
+           return SIBOS_OFFICIAL_GAS_URL;
+        }
+        return savedUrl;
       });
 
       const handleSaveAppsScriptUrl = (newUrl) => {
@@ -1390,29 +1399,51 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         const url = (appsScriptUrl || cloudUrlInput || localStorage.getItem("bos_apps_script_url") || "").trim();
         if (!url) {
           if (!silent) {
-            alert("⚠️ URL Google Apps Script belum diisi!\n\nSilakan masukkan URL Web App Google Apps Script di menu 'Pengaturan Sekolah' > 'Database Cloud Google'.");
+            alert("⚠️ URL Database belum diisi!\n\nSilakan masukkan URL Firebase atau Google Apps Script di menu 'Pengaturan Sekolah'.");
             setCurrentView("pengaturan");
           }
           return;
         }
         setCloudSyncStatus("syncing");
-        setCloudStatusMsg("Menyinkronkan ke Cloud Google...");
+        setCloudStatusMsg("Menyinkronkan ke Cloud...");
         try {
+          const dataToSave = {
+            headerInfo: headerInfo,
+            masterRkas: masterRkas,
+            perBulanData: perBulanData,
+            belanjaBankList: belanjaBankList,
+            danaMasukList: danaMasukList,
+            saldoAwal: saldoAwal,
+            manualPurchasedMap: manualPurchasedMap,
+            manualKeteranganTextMap: manualKeteranganTextMap,
+            customLogoUrl: customLogoUrl,
+            customKopSuratUrl: customKopSuratUrl
+          };
+
+          // --- FIREBASE MODE ---
+          if (url.includes("firebaseio.com") || url.includes("firebasedatabase.app")) {
+            if (!window.firebase.apps.length) {
+              window.firebase.initializeApp({ databaseURL: url });
+            }
+            const db = window.firebase.database();
+            await db.ref(`schools/${currentUser.npsn}/data`).set(dataToSave);
+            
+            const nowStr = new Date().toLocaleString("id-ID");
+            setCloudSyncStatus("synced");
+            setCloudLastSynced(nowStr);
+            localStorage.setItem(`bos_${currentUser.npsn}_last_cloud_sync`, nowStr);
+            setCloudStatusMsg(`Tersinkron (Firebase): ${nowStr}`);
+            if (!silent) {
+              alert(`✅ Sinkronisasi Firebase Berhasil!\n\nSeluruh data sekolah telah tersimpan seketika di Firebase Realtime Database.`);
+            }
+            return;
+          }
+
+          // --- GOOGLE APPS SCRIPT MODE ---
           const payload = {
             action: "syncSchool",
             npsn: currentUser.npsn,
-            data: {
-              headerInfo: headerInfo,
-              masterRkas: masterRkas,
-              perBulanData: perBulanData,
-              belanjaBankList: belanjaBankList,
-              danaMasukList: danaMasukList,
-              saldoAwal: saldoAwal,
-              manualPurchasedMap: manualPurchasedMap,
-              manualKeteranganTextMap: manualKeteranganTextMap,
-              customLogoUrl: customLogoUrl,
-              customKopSuratUrl: customKopSuratUrl
-            }
+            data: dataToSave
           };
           const res = await fetch(url, {
             method: "POST",
@@ -1427,7 +1458,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
             localStorage.setItem(`bos_${currentUser.npsn}_last_cloud_sync`, nowStr);
             setCloudStatusMsg(`Tersinkron: ${nowStr}`);
             if (!silent) {
-              alert(`✅ Sinkronisasi Berhasil!\n\nSeluruh data sekolah "${headerInfo.namaSekolah || currentUser.namaSekolah}" (NPSN: ${currentUser.npsn}) telah tersimpan aman di Google Cloud Spreadsheet.\n\nData ini dapat langsung dibuka dan tampil di HP, tablet, maupun browser lain!`);
+              alert(`✅ Sinkronisasi Berhasil!\n\nSeluruh data sekolah telah tersimpan aman di Google Cloud Spreadsheet.`);
             }
           } else {
             throw new Error(result.message || "Gagal menyimpan ke Google Cloud");
@@ -1437,7 +1468,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           setCloudSyncStatus("error");
           setCloudStatusMsg("Gagal sinkron cloud");
           if (!silent) {
-            alert(`⚠️ Gagal menyinkronkan data ke Google Cloud:\n\n${err.message || err}\n\nPastikan URL berakhiran '/exec' dan akses deployment diatur ke 'Anyone'.`);
+            alert(`⚠️ Gagal menyinkronkan data ke Cloud:\n\n${err.message || err}`);
           }
         }
       };
@@ -1445,16 +1476,41 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
       const handlePullDataFromCloud = async (silent = false) => {
         const url = (appsScriptUrl || cloudUrlInput || localStorage.getItem("bos_apps_script_url") || "").trim();
         if (!url) {
-          if (!silent) alert("⚠️ URL Google Apps Script belum diisi!");
+          if (!silent) alert("⚠️ URL Database Cloud belum diisi!");
           return;
         }
         setCloudSyncStatus("syncing");
-        setCloudStatusMsg("Mengambil data dari Cloud Google...");
+        setCloudStatusMsg("Mengambil data dari Cloud...");
+        
+        let d = null;
         try {
-          const res = await fetch(`${url}?action=getSchoolData&npsn=${encodeURIComponent(currentUser.npsn)}`);
-          const result = await res.json();
-          if (result.status === "success" && result.data) {
-            const d = result.data;
+          // --- FIREBASE MODE ---
+          if (url.includes("firebaseio.com") || url.includes("firebasedatabase.app")) {
+            if (!window.firebase.apps.length) {
+              window.firebase.initializeApp({ databaseURL: url });
+            }
+            const db = window.firebase.database();
+            const snapshot = await db.ref(`schools/${currentUser.npsn}/data`).once('value');
+            d = snapshot.val();
+            
+            if (!d) {
+               setCloudSyncStatus("synced");
+               setCloudStatusMsg("Tidak ada data di Firebase");
+               if (!silent) alert(`ℹ️ Belum ada data tersimpan di Firebase untuk NPSN ${currentUser.npsn}.`);
+               return;
+            }
+          } else {
+             // --- GOOGLE APPS SCRIPT MODE ---
+             const res = await fetch(`${url}?action=getSchoolData&npsn=${encodeURIComponent(currentUser.npsn)}`);
+             const result = await res.json();
+             if (result.status === "success" && result.data) {
+                d = result.data;
+             } else {
+                throw new Error("Gagal mengambil data dari Google Apps Script");
+             }
+          }
+
+          if (d) {
             let loadedCount = 0;
 
             if (d.headerInfo && typeof d.headerInfo === "object" && Object.keys(d.headerInfo).length > 0) {
