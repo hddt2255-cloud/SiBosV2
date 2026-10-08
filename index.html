@@ -17,9 +17,6 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <!-- PDF.js for PDF Parsing & Import -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-  <!-- Firebase (v8 compat for simpler synchronous setup) -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
     body {
@@ -118,61 +115,8 @@
     };
   </script>
 
-    <script>
-    (function() {
-      if (window.__SIBOS_PERSISTENCE_HOOKS__) return;
-      window.__SIBOS_PERSISTENCE_HOOKS__ = true;
-
-      var _setItem = localStorage.setItem.bind(localStorage);
-      var _removeItem = localStorage.removeItem.bind(localStorage);
-      var _clear = localStorage.clear.bind(localStorage);
-
-      function syncToPy(key, value) {
-        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_db === 'function') {
-          try {
-            window.pywebview.api.save_db(key, value);
-          } catch(e) {
-            console.error("Failed to sync to Py:", e);
-          }
-        }
-      }
-
-      localStorage.setItem = function(key, value) {
-        _setItem(key, value);
-        syncToPy(key, value);
-      };
-
-      localStorage.removeItem = function(key) {
-        _removeItem(key);
-        syncToPy(key, null);
-      };
-
-      window.addEventListener('pywebviewready', function() {
-        console.log("pywebview API ready. Syncing current localStorage to backend DB...");
-        var keys = [
-          "bos_belanja_bank_v6",
-          "bos_custom_kop_v1",
-          "bos_custom_logo_v1",
-          "bos_dana_masuk_v1",
-          "bos_header_info_v3",
-          "bos_manual_keterangan_text_map_v1",
-          "bos_manual_purchased_map_v4",
-          "bos_master_rkas_pdf_final",
-          "bos_perbulan_data_final_v20",
-          "bos_saldo_awal_v1"
-        ];
-        keys.forEach(function(k) {
-          var val = localStorage.getItem(k);
-          if (val !== null && val !== undefined) {
-            syncToPy(k, val);
-          }
-        });
-      });
-    })();
-  </script>
-
   <script type="text/babel">
-    const { useState, useEffect, useMemo, useRef } = React;
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
     const MONTHS = [
       "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -281,8 +225,47 @@
       return 0;
     }
 
-    // URL RESMI DATABASE CLOUD SIBOS V1 (FIREBASE REALTIME DATABASE)
-    const SIBOS_OFFICIAL_GAS_URL = "https://sibos-54bcc-default-rtdb.asia-southeast1.firebasedatabase.app/";
+    // URL RESMI DATABASE CLOUD FIREBASE REALTIME SIBOS V1
+    const SIBOS_FIREBASE_DB_URL = "https://sibos-54bcc-default-rtdb.asia-southeast1.firebasedatabase.app/";
+    const SIBOS_OFFICIAL_GAS_URL = SIBOS_FIREBASE_DB_URL;
+
+    const normalizeFirebaseBaseUrl = (url) => {
+      const raw = (url || SIBOS_FIREBASE_DB_URL).trim().replace(/\/+$/, "");
+      return raw.endsWith(".json") ? raw.replace(/\/[^\/]*\.json$/i, "") : raw;
+    };
+
+    const normalizeArrayData = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val.filter(x => x !== null && x !== undefined);
+      if (typeof val === "object") return Object.values(val).filter(x => x !== null && x !== undefined);
+      return [];
+    };
+
+    const normalizeObjectMap = (val) => {
+      if (!val || typeof val !== "object") return {};
+      const out = {};
+      Object.keys(val).forEach(k => {
+        if (val[k] !== null && val[k] !== undefined) {
+          out[k] = val[k];
+        }
+      });
+      return out;
+    };
+
+    const normalizePerBulanData = (raw) => {
+      const base = {
+        "Januari": [], "Februari": [], "Maret": [], "April": [], "Mei": [], "Juni": [],
+        "Juli": [], "Agustus": [], "September": [], "Oktober": [], "November": [], "Desember": []
+      };
+      if (raw && typeof raw === "object") {
+        MONTHS.forEach(m => {
+          if (raw[m]) {
+            base[m] = normalizeArrayData(raw[m]);
+          }
+        });
+      }
+      return base;
+    };
     
     function AuthPage({ accounts, onLogin, onRegister, onUpdateAccounts, appsScriptUrl, onSaveAppsScriptUrl, onFetchAccountsFromCloud }) {
       const [tab, setTab] = useState("login");
@@ -298,33 +281,32 @@
 
       // Cloud Database Config Modal States
       const [showCloudConfigModal, setShowCloudConfigModal] = useState(false);
-      const [inputCloudUrl, setInputCloudUrl] = useState(appsScriptUrl || SIBOS_OFFICIAL_GAS_URL);
+      const [inputCloudUrl, setInputCloudUrl] = useState(appsScriptUrl || SIBOS_FIREBASE_DB_URL);
       const [cloudStatus, setCloudStatus] = useState({ type: "", text: "" });
       const [isTestingCloud, setIsTestingCloud] = useState(false);
 
       const handleTestAndSyncCloud = async () => {
-        const url = inputCloudUrl.trim();
+        const url = (inputCloudUrl || SIBOS_FIREBASE_DB_URL).trim();
         if (!url) {
-          setCloudStatus({ type: "error", text: "Mohon masukkan Web App URL Google Apps Script Anda." });
+          setCloudStatus({ type: "error", text: "Mohon masukkan URL Firebase Realtime Database Anda." });
           return;
         }
         setIsTestingCloud(true);
-        setCloudStatus({ type: "info", text: "Menghubungi server Google Apps Script..." });
+        setCloudStatus({ type: "info", text: "Menghubungi Firebase Realtime Database..." });
         try {
           if (onSaveAppsScriptUrl) onSaveAppsScriptUrl(url);
-          const res = await fetch(`${url}?action=getAccounts`);
-          const json = await res.json();
-          if (json.status === "success") {
-            if (onFetchAccountsFromCloud) {
-              await onFetchAccountsFromCloud(url);
-            }
-            const count = (json.accounts && json.accounts.length) || 0;
-            setCloudStatus({ type: "success", text: `✅ Berhasil terhubung! Ditemukan ${count} akun sekolah dari Google Cloud Spreadsheet.` });
+          const cloudRes = onFetchAccountsFromCloud ? await onFetchAccountsFromCloud(url) : null;
+          if (cloudRes && cloudRes.success) {
+            const count = (cloudRes.accounts && cloudRes.accounts.length) || 0;
+            setCloudStatus({ type: "success", text: `✅ Berhasil terhubung ke Firebase! Ditemukan ${count} akun sekolah tersinkron.` });
           } else {
-            throw new Error(json.message || "Respon dari Google Cloud tidak valid");
+            const baseUrl = normalizeFirebaseBaseUrl(url);
+            const res = await fetch(`${baseUrl}/.json?shallow=true`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            setCloudStatus({ type: "success", text: "✅ Berhasil terhubung ke Firebase Realtime Database!" });
           }
         } catch (err) {
-          setCloudStatus({ type: "error", text: `❌ Gagal terhubung: ${err.message || err}` });
+          setCloudStatus({ type: "error", text: `❌ Gagal terhubung ke Firebase: ${err.message || err}` });
         } finally {
           setIsTestingCloud(false);
         }
@@ -352,25 +334,25 @@
           return;
         }
 
-        let acc = accounts.find(a => a.npsn === cleanNpsn || a.namaSekolah.toLowerCase() === cleanNpsn.toLowerCase());
-        
-        // Jika akun lokal belum ada tapi Cloud URL aktif, cek ke Cloud secara otomatis
-        if (!acc && (appsScriptUrl || localStorage.getItem("bos_apps_script_url")) && onFetchAccountsFromCloud) {
-          setLoginError("🔍 Memeriksa pendaftaran akun di database Google Cloud...");
+        // Selalu cek akun terbaru dari Firebase agar sinkron antara Komputer dan HP
+        let latestAccounts = accounts;
+        if (onFetchAccountsFromCloud) {
           try {
             const cloudRes = await onFetchAccountsFromCloud();
-            if (cloudRes && cloudRes.accounts) {
-              acc = cloudRes.accounts.find(a => a.npsn === cleanNpsn || a.namaSekolah.toLowerCase() === cleanNpsn.toLowerCase());
+            if (cloudRes && Array.isArray(cloudRes.accounts) && cloudRes.accounts.length > 0) {
+              latestAccounts = cloudRes.accounts;
             }
           } catch(err) {}
         }
 
+        let acc = latestAccounts.find(a => a.npsn === cleanNpsn || (a.namaSekolah && a.namaSekolah.toLowerCase() === cleanNpsn.toLowerCase()));
+
         if (!acc) {
-          setLoginError(`NPSN "${cleanNpsn}" belum terdaftar. Silakan lakukan registrasi sekolah atau klik icon ☁️ di pojok kanan atas jika akun dibuat di perangkat lain.`);
+          setLoginError(`NPSN "${cleanNpsn}" belum terdaftar di Firebase. Silakan lakukan registrasi sekolah terlebih dahulu.`);
           return;
         }
 
-        if (acc.password !== cleanPass) {
+        if (String(acc.password) !== cleanPass) {
           setLoginError("Password salah. Mohon periksa kembali Password Anda.");
           return;
         }
@@ -378,7 +360,7 @@
         onLogin(acc);
       };
 
-      const handleRegisterSubmit = (e) => {
+      const handleRegisterSubmit = async (e) => {
         e.preventDefault();
         setRegError("");
         const cleanNpsn = regNpsn.trim();
@@ -390,7 +372,17 @@
           return;
         }
 
-        const existing = accounts.find(a => a.npsn === cleanNpsn);
+        let latestAccounts = accounts;
+        if (onFetchAccountsFromCloud) {
+          try {
+            const cloudRes = await onFetchAccountsFromCloud();
+            if (cloudRes && Array.isArray(cloudRes.accounts) && cloudRes.accounts.length > 0) {
+              latestAccounts = cloudRes.accounts;
+            }
+          } catch(err) {}
+        }
+
+        const existing = latestAccounts.find(a => a.npsn === cleanNpsn);
         if (existing) {
           setRegError(`NPSN ${cleanNpsn} sudah terdaftar (${existing.namaSekolah}). Silakan masuk via menu Login.`);
           return;
@@ -412,6 +404,7 @@
         if (saPassword.trim() === "hdt123") {
           setIsSuperAdminLoggedIn(true);
           setSaError("");
+          if (onFetchAccountsFromCloud) onFetchAccountsFromCloud();
         } else {
           setSaError("Password Super Admin salah!");
         }
@@ -442,7 +435,7 @@
           };
           const next = [...accounts, newSchool];
           onUpdateAccounts(next);
-          alert(`✅ Sekolah ${cleanNama} (NPSN: ${cleanNpsn}) berhasil ditambahkan!`);
+          alert(`✅ Sekolah ${cleanNama} (NPSN: ${cleanNpsn}) berhasil ditambahkan ke Firebase!`);
         } else if (saActionModal === 'edit') {
           const next = accounts.map(a => a.npsn === saSchoolForm.originalNpsn ? {
             ...a,
@@ -452,55 +445,40 @@
             password: cleanPass
           } : a);
           onUpdateAccounts(next);
-          alert(`✅ Data sekolah ${cleanNama} berhasil diperbarui!`);
+          alert(`✅ Data sekolah ${cleanNama} berhasil diperbarui di Firebase!`);
         }
 
         setSaActionModal(null);
       };
 
       const handleDeleteSchoolBySuperAdmin = (school) => {
-        if (confirm(`Apakah Anda yakin ingin menghapus sekolah "${school.namaSekolah}" (NPSN: ${school.npsn})?\n\nSemua data anggaran dan belanja sekolah ini akan dibersihkan dari memori browser.`)) {
+        if (confirm(`Apakah Anda yakin ingin menghapus sekolah "${school.namaSekolah}" (NPSN: ${school.npsn})?\n\nSemua data anggaran dan belanja sekolah ini akan dihapus dari Firebase.`)) {
           const next = accounts.filter(a => a.npsn !== school.npsn);
-          onUpdateAccounts(next);
-          
-          // Bersihkan data storage sekolah tersebut
-          const keysToDelete = [
-            `bos_${school.npsn}_perbulan_data_final_v20`,
-            `bos_${school.npsn}_header_info_v3`,
-            `bos_${school.npsn}_custom_logo_v1`,
-            `bos_${school.npsn}_custom_kop_v1`,
-            `bos_${school.npsn}_master_rkas_pdf_final`,
-            `bos_${school.npsn}_saldo_awal_v1`,
-            `bos_${school.npsn}_dana_masuk_v1`,
-            `bos_${school.npsn}_belanja_bank_v6`,
-            `bos_${school.npsn}_manual_purchased_map_v4`,
-            `bos_${school.npsn}_manual_keterangan_text_map_v1`
-          ];
-          keysToDelete.forEach(k => localStorage.removeItem(k));
-          alert(`✅ Sekolah "${school.namaSekolah}" berhasil dihapus.`);
+          onUpdateAccounts(next, school.npsn);
+          alert(`✅ Sekolah "${school.namaSekolah}" berhasil dihapus dari Firebase.`);
         }
       };
 
       return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4 relative">
           
-          {/* TOMBOL CLOUD GOOGLE & GIR SUPER ADMIN DI KANAN ATAS */}
+          {/* TOMBOL CLOUD FIREBASE & GIR SUPER ADMIN DI KANAN ATAS */}
           <div className="fixed top-5 right-5 z-40 flex items-center gap-2">
             <button
               type="button"
               onClick={() => {
-                setInputCloudUrl(appsScriptUrl || localStorage.getItem("bos_apps_script_url") || "");
+                setInputCloudUrl(appsScriptUrl || SIBOS_FIREBASE_DB_URL);
                 setCloudStatus({ type: "", text: "" });
                 setShowCloudConfigModal(true);
               }}
-              title="Hubungkan Database Cloud Google (Akses Antar-Perangkat / HP)"
+              title="Database Cloud Firebase Realtime (Sinkron Komputer & HP)"
               className={`w-10 h-10 rounded-xl border backdrop-blur-md flex items-center justify-center transition shadow-xl hover:scale-110 cursor-pointer text-lg ${
                 appsScriptUrl 
-                  ? "bg-sky-950/90 hover:bg-sky-900 text-sky-400 border-sky-500/50 shadow-sky-900/30 ring-1 ring-sky-400/30" 
-                  : "bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-sky-300 border-slate-700/80"
+                  ? "bg-amber-950/90 hover:bg-amber-900 text-amber-400 border-amber-500/50 shadow-amber-900/30 ring-1 ring-amber-400/30" 
+                  : "bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-amber-300 border-slate-700/80"
               }`}
             >
-              ☁️
+              🔥
             </button>
             <button
               type="button"
@@ -956,36 +934,36 @@
             </div>
           )}
 
-          {/* MODAL PENGATURAN DATABASE CLOUD (GOOGLE APPS SCRIPT) */}
+          {/* MODAL PENGATURAN DATABASE CLOUD FIREBASE REALTIME */}
           {showCloudConfigModal && (
             <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div className="bg-white rounded-2xl shadow-2xl border border-slate-700/20 max-w-lg w-full overflow-hidden">
-                <div className="bg-gradient-to-r from-sky-900 to-indigo-950 p-5 text-white flex items-center justify-between">
+                <div className="bg-gradient-to-r from-amber-700 to-orange-900 p-5 text-white flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-xl">
-                      ☁️
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-xl">
+                      🔥
                     </div>
                     <div>
-                      <h3 className="font-bold text-sm text-white">Database Cloud Google</h3>
-                      <p className="text-[11px] text-sky-200">Akses Realtime dari HP & Browser Lain</p>
+                      <h3 className="font-bold text-sm text-white">Database Cloud Firebase Realtime</h3>
+                      <p className="text-[11px] text-amber-200">Sinkronisasi Realtime Otomatis di Komputer &amp; HP</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowCloudConfigModal(false)}
-                    className="text-slate-400 hover:text-white text-xl cursor-pointer"
+                    className="text-slate-200 hover:text-white text-xl cursor-pointer"
                   >
                     &times;
                   </button>
                 </div>
 
                 <div className="p-6 space-y-4">
-                  <div className="bg-sky-50 border border-sky-200 rounded-xl p-3.5 text-xs text-sky-900 space-y-1">
-                    <p className="font-bold flex items-center gap-1.5 text-sky-950">
-                      <span>💡</span> Sinkronisasi Cloud Antar-Perangkat
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-900 space-y-1">
+                    <p className="font-bold flex items-center gap-1.5 text-amber-950">
+                      <span>🔥</span> Database Terpusat Hanya dari Firebase
                     </p>
                     <p className="leading-relaxed text-slate-700">
-                      Masukkan URL Web App dari <strong>Google Apps Script</strong> Anda di bawah ini agar akun sekolah dan data yang disimpan di komputer dapat langsung terbuka di HP (smartphone) atau browser lainnya.
+                      Seluruh akun sekolah, RKAS, rincian perbulan, transaksi belanja SI, dan rekening koran kini tersimpan langsung di <strong>Firebase Realtime Database</strong> agar otomatis tersinkron di semua aplikasi baik di komputer maupun di HP.
                     </p>
                   </div>
 
@@ -1004,14 +982,14 @@
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="block text-xs font-bold text-slate-700">
-                        URL Web App Google Apps Script (/exec):
+                        URL Firebase Realtime Database:
                       </label>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => {
-                            setInputCloudUrl(SIBOS_OFFICIAL_GAS_URL);
-                            if (onSaveAppsScriptUrl) onSaveAppsScriptUrl(SIBOS_OFFICIAL_GAS_URL);
+                            setInputCloudUrl(SIBOS_FIREBASE_DB_URL);
+                            if (onSaveAppsScriptUrl) onSaveAppsScriptUrl(SIBOS_FIREBASE_DB_URL);
                           }}
                           className="text-[11px] text-blue-600 hover:underline font-semibold cursor-pointer"
                         >
@@ -1021,8 +999,8 @@
                         <button
                           type="button"
                           onClick={() => {
-                            navigator.clipboard.writeText(inputCloudUrl || SIBOS_OFFICIAL_GAS_URL);
-                            alert("📋 Link Web App Google Apps Script berhasil disalin ke clipboard!");
+                            navigator.clipboard.writeText(inputCloudUrl || SIBOS_FIREBASE_DB_URL);
+                            alert("📋 Link Firebase Realtime Database berhasil disalin ke clipboard!");
                           }}
                           className="text-[11px] text-emerald-600 hover:underline font-semibold cursor-pointer"
                         >
@@ -1032,13 +1010,13 @@
                     </div>
                     <input
                       type="url"
-                      placeholder="https://script.google.com/macros/s/.../exec"
+                      placeholder="https://sibos-54bcc-default-rtdb.asia-southeast1.firebasedatabase.app/"
                       value={inputCloudUrl}
                       onChange={(e) => setInputCloudUrl(e.target.value)}
-                      className="w-full text-xs font-mono border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-sky-500 outline-none transition"
+                      className="w-full text-xs font-mono border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-amber-500 outline-none transition"
                     />
                     <span className="text-[11px] text-slate-500 mt-1 block">
-                      Link resmi aktif terhubung ke database Google Spreadsheet Anda.
+                      Terhubung langsung ke Firebase Realtime Database (Asia Southeast 1).
                     </span>
                   </div>
 
@@ -1047,20 +1025,20 @@
                       type="button"
                       onClick={handleTestAndSyncCloud}
                       disabled={isTestingCloud}
-                      className="flex-1 px-4 py-2.5 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-400 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="flex-1 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <span>{isTestingCloud ? "⏳" : "🧪"}</span>
-                      <span>{isTestingCloud ? "Menghubungi Cloud..." : "Uji & Ambil Akun"}</span>
+                      <span>{isTestingCloud ? "Menghubungi Firebase..." : "Uji & Sinkron Akun Firebase"}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        if (onSaveAppsScriptUrl) onSaveAppsScriptUrl(inputCloudUrl.trim());
+                        if (onSaveAppsScriptUrl) onSaveAppsScriptUrl(inputCloudUrl.trim() || SIBOS_FIREBASE_DB_URL);
                         setShowCloudConfigModal(false);
                       }}
                       className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm transition cursor-pointer"
                     >
-                      💾 Simpan & Tutup
+                      💾 Simpan &amp; Tutup
                     </button>
                   </div>
                 </div>
@@ -1073,62 +1051,89 @@
     }
 
     function App() {
-      const [appsScriptUrl, setAppsScriptUrl] = useState(() => {
-        let savedUrl = localStorage.getItem("bos_apps_script_url");
-        // Jika masih kosong atau menggunakan URL Apps Script lama, paksa ganti ke Firebase
-        if (!savedUrl || savedUrl.includes("script.google.com/macros/s/")) {
-           localStorage.setItem("bos_apps_script_url", SIBOS_OFFICIAL_GAS_URL);
-           return SIBOS_OFFICIAL_GAS_URL;
-        }
-        return savedUrl;
-      });
+      const [appsScriptUrl, setAppsScriptUrl] = useState(SIBOS_FIREBASE_DB_URL);
 
       const handleSaveAppsScriptUrl = (newUrl) => {
-        const cleaned = (newUrl || "").trim();
+        const cleaned = (newUrl || SIBOS_FIREBASE_DB_URL).trim();
         setAppsScriptUrl(cleaned);
-        localStorage.setItem("bos_apps_script_url", cleaned);
       };
 
-      const [accounts, setAccounts] = useState(() => {
-        const saved = localStorage.getItem("bos_accounts");
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-          } catch(e) {}
-        }
-        const def = [{ npsn: "20231556", namaSekolah: "SDIT ANNISA", kepalaSekolah: "Abdul Yakub, S.Ag", password: "20231556" }];
-        localStorage.setItem("bos_accounts", JSON.stringify(def));
-        return def;
-      });
+      const [accounts, setAccounts] = useState([
+        { npsn: "20231556", namaSekolah: "SDIT ANNISA", kepalaSekolah: "Abdul Yakub, S.Ag", password: "20231556" }
+      ]);
 
-      // Fungsi ambil data akun dari Cloud Google Apps Script
-      const fetchAccountsFromCloud = async (urlToUse) => {
-        const targetUrl = (urlToUse || appsScriptUrl || "").trim();
-        if (!targetUrl) return { success: false, message: "URL Web App belum diisi" };
+      const saveAccountsToFirebase = useCallback(async (accsToSave, urlToUse) => {
+        const baseUrl = normalizeFirebaseBaseUrl(urlToUse || appsScriptUrl);
         try {
-          const res = await fetch(`${targetUrl}?action=getAccounts`);
-          const json = await res.json();
-          if (json.status === "success" && Array.isArray(json.accounts) && json.accounts.length > 0) {
-            setAccounts(json.accounts);
-            localStorage.setItem("bos_accounts", JSON.stringify(json.accounts));
-            return { success: true, count: json.accounts.length, accounts: json.accounts };
-          }
-          return { success: false, message: json.message || "Data akun tidak ditemukan di Cloud" };
+          await fetch(`${baseUrl}/accounts.json`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(accsToSave)
+          });
+          return true;
         } catch (err) {
-          return { success: false, message: err.message || "Gagal menghubungi Google Cloud" };
-        }
-      };
-
-      // Auto-fetch accounts dari cloud on startup jika appsScriptUrl sudah tersimpan
-      useEffect(() => {
-        if (appsScriptUrl) {
-          fetchAccountsFromCloud(appsScriptUrl);
+          console.warn("Firebase save accounts error:", err);
+          return false;
         }
       }, [appsScriptUrl]);
 
+      // Fungsi ambil data akun langsung dari Firebase Realtime Database
+      const fetchAccountsFromCloud = useCallback(async (urlToUse) => {
+        const baseUrl = normalizeFirebaseBaseUrl(urlToUse || appsScriptUrl);
+        try {
+          const res = await fetch(`${baseUrl}/accounts.json`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const rawAccounts = await res.json();
+          let list = normalizeArrayData(rawAccounts).filter(a => a && a.npsn);
+
+          // Jika belum ada di /accounts.json, cek /schools.json agar sekolah yang sudah ada di Firebase tetap terbaca
+          if (list.length === 0) {
+            const schoolsRes = await fetch(`${baseUrl}/schools.json`);
+            if (schoolsRes.ok) {
+              const schoolsObj = await schoolsRes.json();
+              if (schoolsObj && typeof schoolsObj === "object") {
+                Object.keys(schoolsObj).forEach(npsnKey => {
+                  const sEntry = schoolsObj[npsnKey];
+                  const hInfo = (sEntry && sEntry.data && sEntry.data.headerInfo) || (sEntry && sEntry.account) || {};
+                  list.push({
+                    npsn: String(hInfo.npsn || npsnKey),
+                    namaSekolah: String(hInfo.namaSekolah || `Sekolah ${npsnKey}`),
+                    kepalaSekolah: String(hInfo.kepalaSekolah || ""),
+                    password: String((sEntry && sEntry.account && sEntry.account.password) || npsnKey)
+                  });
+                });
+              }
+            }
+          }
+
+          if (list.length === 0) {
+            list = [{ npsn: "20231556", namaSekolah: "SDIT ANNISA", kepalaSekolah: "Abdul Yakub, S.Ag", password: "20231556" }];
+            await saveAccountsToFirebase(list, baseUrl);
+          } else {
+            setAccounts(list);
+          }
+          return { success: true, count: list.length, accounts: list };
+        } catch (err) {
+          return { success: false, message: err.message || "Gagal menghubungi Firebase Realtime Database" };
+        }
+      }, [appsScriptUrl, saveAccountsToFirebase]);
+
+      // Auto-fetch accounts dari Firebase saat startup, saat fokus jendela, dan berkala agar sinkron di semua perangkat
+      useEffect(() => {
+        fetchAccountsFromCloud(appsScriptUrl);
+        const intervalId = setInterval(() => {
+          fetchAccountsFromCloud(appsScriptUrl);
+        }, 6000);
+        const onFocus = () => fetchAccountsFromCloud(appsScriptUrl);
+        window.addEventListener("focus", onFocus);
+        return () => {
+          clearInterval(intervalId);
+          window.removeEventListener("focus", onFocus);
+        };
+      }, [appsScriptUrl, fetchAccountsFromCloud]);
+
       // WAJIB KE AKSES LOGIN SETIAP MEMBUKA WEB SIBOS
-      // Menggunakan sessionStorage sehingga setiap browser dibuka baru, pengguna wajib login terlebih dahulu
+      // Menggunakan sessionStorage hanya untuk penanda sesi tab aktif saat ini
       const [activeNpsn, setActiveNpsn] = useState(() => {
         return sessionStorage.getItem("bos_active_npsn") || "";
       });
@@ -1140,56 +1145,56 @@
         sessionStorage.setItem("bos_active_npsn", acc.npsn);
       };
 
-      const handleRegister = (newAcc) => {
-        const nextAccs = [...accounts, newAcc];
+      const handleRegister = async (newAcc) => {
+        const nextAccs = [...accounts.filter(a => a.npsn !== newAcc.npsn), newAcc];
         setAccounts(nextAccs);
-        localStorage.setItem("bos_accounts", JSON.stringify(nextAccs));
-        
-        // Simpan juga ke Cloud Google Spreadsheet jika appsScriptUrl aktif
-        if (appsScriptUrl) {
-          fetch(appsScriptUrl, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
-              action: "registerSchool",
-              npsn: newAcc.npsn,
-              namaSekolah: newAcc.namaSekolah,
-              kepalaSekolah: newAcc.kepalaSekolah,
-              password: newAcc.password
-            })
-          }).catch(e => console.warn("Cloud register error:", e));
-        }
+        await saveAccountsToFirebase(nextAccs, appsScriptUrl);
 
-        // Pastikan ruang data sekolah baru disiapkan dalam keadaan 100% KOSONG
-        const emptyPerbulan = {
-          "Januari": [], "Februari": [], "Maret": [], "April": [], "Mei": [], "Juni": [],
-          "Juli": [], "Agustus": [], "September": [], "Oktober": [], "November": [], "Desember": []
+        // Siapkan ruang data sekolah baru di Firebase dalam keadaan 100% KOSONG
+        const emptyPerbulan = normalizePerBulanData({});
+        const initialSchoolData = {
+          updatedAt: new Date().toISOString(),
+          headerInfo: {
+            npsn: newAcc.npsn,
+            namaSekolah: newAcc.namaSekolah,
+            kepalaSekolah: newAcc.kepalaSekolah || "",
+            alamat: "",
+            kabupaten: "Kota Bekasi",
+            provinsi: "Jawa Barat",
+            tahunAnggaran: "2026",
+            sumberDana: "BOS Reguler",
+            totalPenerimaan: 0,
+            bendaharaSekolah: "",
+            noRekening: "",
+            namaBank: "",
+            email: "",
+            noHp: ""
+          },
+          masterRkas: [],
+          perBulanData: emptyPerbulan,
+          belanjaBankList: [],
+          danaMasukList: [],
+          saldoAwal: 0,
+          manualPurchasedMap: {},
+          manualKeteranganTextMap: {},
+          customLogoUrl: "",
+          customKopSuratUrl: ""
         };
-        localStorage.setItem(`bos_${newAcc.npsn}_perbulan_data_final_v20`, JSON.stringify(emptyPerbulan));
-        localStorage.setItem(`bos_${newAcc.npsn}_master_rkas_pdf_final`, JSON.stringify([]));
-        localStorage.setItem(`bos_${newAcc.npsn}_belanja_bank_v6`, JSON.stringify([]));
-        localStorage.setItem(`bos_${newAcc.npsn}_dana_masuk_v1`, JSON.stringify([]));
-        localStorage.setItem(`bos_${newAcc.npsn}_saldo_awal_v1`, "0");
-        localStorage.setItem(`bos_${newAcc.npsn}_header_info_v3`, JSON.stringify({
-          npsn: newAcc.npsn,
-          namaSekolah: newAcc.namaSekolah,
-          kepalaSekolah: newAcc.kepalaSekolah || "",
-          alamat: "",
-          kabupaten: "Kota Bekasi",
-          provinsi: "Jawa Barat",
-          tahunAnggaran: "2026",
-          sumberDana: "BOS Reguler",
-          totalPenerimaan: 0,
-          bendaharaSekolah: "",
-          noRekening: "",
-          namaBank: "",
-          email: "",
-          noHp: ""
-        }));
+
+        const baseUrl = normalizeFirebaseBaseUrl(appsScriptUrl);
+        try {
+          await fetch(`${baseUrl}/schools/${encodeURIComponent(newAcc.npsn)}/data.json`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(initialSchoolData)
+          });
+        } catch (e) {
+          console.warn("Firebase register school data error:", e);
+        }
 
         setActiveNpsn(newAcc.npsn);
         sessionStorage.setItem("bos_active_npsn", newAcc.npsn);
-        alert(`✅ Registrasi Berhasil!\n\nSekolah "${newAcc.namaSekolah}" (NPSN: ${newAcc.npsn}) berhasil didaftarkan.\nKepala Sekolah: ${newAcc.kepalaSekolah || '-'}.\n\nAnda langsung dialihkan ke Ruang Kerja SiBos dalam keadaan data baru yang bersih/kosong.`);
+        alert(`✅ Registrasi Berhasil!\n\nSekolah "${newAcc.namaSekolah}" (NPSN: ${newAcc.npsn}) berhasil didaftarkan ke Firebase Realtime Database.\nKepala Sekolah: ${newAcc.kepalaSekolah || '-'}.\n\nAnda langsung dialihkan ke Ruang Kerja SiBos.`);
       };
 
       const handleLogout = () => {
@@ -1199,39 +1204,26 @@
         }
       };
 
-      const handleUpdateAccountPassword = (npsn, newPassword) => {
+      const handleUpdateAccountPassword = async (npsn, newPassword) => {
         const next = accounts.map(a => a.npsn === npsn ? { ...a, password: newPassword } : a);
         setAccounts(next);
-        localStorage.setItem("bos_accounts", JSON.stringify(next));
-
-        if (appsScriptUrl) {
-          fetch(appsScriptUrl, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
-              action: "updatePassword",
-              npsn: npsn,
-              password: newPassword
-            })
-          }).catch(e => console.warn("Cloud update password error:", e));
-        }
-
-        alert(`✅ Password akun sekolah berhasil diubah! Gunakan password baru ini saat masuk kembali.`);
+        await saveAccountsToFirebase(next, appsScriptUrl);
+        alert(`✅ Password akun sekolah berhasil diubah dan tersimpan di Firebase! Gunakan password baru ini saat masuk kembali di komputer maupun HP.`);
       };
 
-      const handleUpdateAccounts = (newAccounts) => {
+      const handleUpdateAccounts = async (newAccounts, deletedNpsn = null) => {
         setAccounts(newAccounts);
-        localStorage.setItem("bos_accounts", JSON.stringify(newAccounts));
+        await saveAccountsToFirebase(newAccounts, appsScriptUrl);
 
-        if (appsScriptUrl) {
-          fetch(appsScriptUrl, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
-              action: "syncAccounts",
-              accounts: newAccounts
-            })
-          }).catch(e => console.warn("Cloud sync accounts error:", e));
+        if (deletedNpsn) {
+          const baseUrl = normalizeFirebaseBaseUrl(appsScriptUrl);
+          try {
+            await fetch(`${baseUrl}/schools/${encodeURIComponent(deletedNpsn)}.json`, {
+              method: "DELETE"
+            });
+          } catch (e) {
+            console.warn("Firebase delete school error:", e);
+          }
         }
       };
 
@@ -1257,14 +1249,14 @@
           onUpdatePassword={handleUpdateAccountPassword}
           appsScriptUrl={appsScriptUrl}
           onSaveAppsScriptUrl={handleSaveAppsScriptUrl}
-          onUpdateAccountInfo={(updatedHeader) => {
+          onUpdateAccountInfo={async (updatedHeader) => {
             const nextAccs = accounts.map(a => a.npsn === currentUser.npsn ? {
               ...a,
               namaSekolah: updatedHeader.namaSekolah || a.namaSekolah,
               kepalaSekolah: updatedHeader.kepalaSekolah || a.kepalaSekolah
             } : a);
             setAccounts(nextAccs);
-            localStorage.setItem("bos_accounts", JSON.stringify(nextAccs));
+            await saveAccountsToFirebase(nextAccs, appsScriptUrl);
           }}
         />
       );
@@ -1278,14 +1270,19 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
       const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
       const [isPerBulanOpen, setIsPerBulanOpen] = useState(false);
 
-      // State Database Cloud Google Apps Script
-      const [cloudUrlInput, setCloudUrlInput] = useState(appsScriptUrl || localStorage.getItem("bos_apps_script_url") || SIBOS_OFFICIAL_GAS_URL);
-      const [cloudSyncStatus, setCloudSyncStatus] = useState("idle"); // 'idle' | 'syncing' | 'synced' | 'error'
-      const [cloudStatusMsg, setCloudStatusMsg] = useState("");
-      const [cloudLastSynced, setCloudLastSynced] = useState(() => {
-        return localStorage.getItem(`bos_${currentUser.npsn}_last_cloud_sync`) || "";
-      });
+      // State Database Cloud Firebase Realtime
+      const [cloudUrlInput, setCloudUrlInput] = useState(appsScriptUrl || SIBOS_FIREBASE_DB_URL);
+      const [cloudSyncStatus, setCloudSyncStatus] = useState("syncing"); // 'idle' | 'syncing' | 'synced' | 'error'
+      const [cloudStatusMsg, setCloudStatusMsg] = useState("Menghubungkan ke Firebase...");
+      const [cloudLastSynced, setCloudLastSynced] = useState("");
       const [showCloudGuideModal, setShowCloudGuideModal] = useState(false);
+
+      // Refs untuk sinkronisasi 2 arah otomatis Firebase (Komputer <-> HP)
+      const isCloudReadyRef = useRef(false);
+      const isApplyingRemoteRef = useRef(false);
+      const isPushingRef = useRef(false);
+      const lastSyncedUpdatedAtRef = useRef("");
+      const autoSaveTimerRef = useRef(null);
 
       // State Ubah Password di Pengaturan Sekolah
       const [newPasswordVal, setNewPasswordVal] = useState("");
@@ -1312,7 +1309,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
         if (onUpdatePassword) {
           onUpdatePassword(currentUser.npsn, newPasswordVal.trim());
-          setPasswordMsg({ type: "success", text: "✅ Password akun sekolah berhasil diubah! Gunakan password baru ini saat login kembali." });
+          setPasswordMsg({ type: "success", text: "✅ Password akun sekolah berhasil diubah di Firebase! Gunakan password baru ini saat login kembali." });
           setNewPasswordVal("");
           setConfirmPasswordVal("");
         }
@@ -1323,362 +1320,315 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
       const [suratTransferCetakDate, setSuratTransferCetakDate] = useState("28 September 2026");
       const [suratTransferNomor, setSuratTransferNomor] = useState("12/SI/SDITANNISA/IX/2026");
 
-      // Rincian Kertas Kerja Perbulan State
-      const [perBulanData, setPerBulanData] = useState(() => {
-        const saved = localStorage.getItem(`bos_${currentUser.npsn}_perbulan_data_final_v20`);
-        if (saved !== null) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (parsed && typeof parsed === 'object') return parsed;
-          } catch(e) {}
-        }
-        const initial = {
-          "Januari": [],
-          "Februari": [],
-          "Maret": [],
-          "April": [],
-          "Mei": [],
-          "Juni": [],
-          "Juli": [],
-          "Agustus": [],
-          "September": [],
-          "Oktober": [],
-          "November": [],
-          "Desember": []
-        };
-        localStorage.setItem(`bos_${currentUser.npsn}_perbulan_data_final_v20`, JSON.stringify(initial));
-        return initial;
-      });
-
-      useEffect(() => {
-        localStorage.setItem(`bos_${currentUser.npsn}_perbulan_data_final_v20`, JSON.stringify(perBulanData));
-      }, [perBulanData]);
+      // Rincian Kertas Kerja Perbulan State (murni dari Firebase)
+      const [perBulanData, setPerBulanData] = useState(() => normalizePerBulanData({}));
 
       // Filter Tanggal Cetak Standing Instruction (SI)
       const [selectedSiDate, setSelectedSiDate] = useState("06/03/2026");
       const [selectedBelanjaTglSI, setSelectedBelanjaTglSI] = useState("Semua");
 
-      // Header Informasi Sekolah State dengan Persistence
-      const [headerInfo, setHeaderInfo] = useState(() => {
-        const saved = localStorage.getItem(`bos_${currentUser.npsn}_header_info_v3`);
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (parsed && typeof parsed === 'object') return parsed;
-          } catch(e) {}
-        }
-        return {
-          npsn: currentUser.npsn,
-          namaSekolah: currentUser.namaSekolah,
-          alamat: "",
-          kabupaten: "",
-          provinsi: "",
-          tahunAnggaran: "2026",
-          sumberDana: "BOS Reguler",
-          totalPenerimaan: 0,
-          kepalaSekolah: currentUser.kepalaSekolah || "",
-          bendaharaSekolah: "",
-          noRekening: "",
-          namaBank: "",
-          email: "",
-          noHp: ""
-        };
+      // Header Informasi Sekolah State (murni dari Firebase)
+      const [headerInfo, setHeaderInfo] = useState(() => ({
+        npsn: currentUser.npsn,
+        namaSekolah: currentUser.namaSekolah,
+        alamat: "",
+        kabupaten: "",
+        provinsi: "",
+        tahunAnggaran: "2026",
+        sumberDana: "BOS Reguler",
+        totalPenerimaan: 0,
+        kepalaSekolah: currentUser.kepalaSekolah || "",
+        bendaharaSekolah: "",
+        noRekening: "",
+        namaBank: "",
+        email: "",
+        noHp: ""
+      }));
+
+      // Logo Web & Kop Surat State (Base64 / URL dari Firebase)
+      const [customLogoUrl, setCustomLogoUrl] = useState("");
+      const [customKopSuratUrl, setCustomKopSuratUrl] = useState("");
+
+      // DATABASE MASTER RKAS (murni dari Firebase)
+      const [masterRkas, setMasterRkas] = useState([]);
+
+      // DATABASE BELANJA / TRANSAKSI BANK (72 ITEM RESMI DARI DOKUMEN PDF LENGKAP)
+      const REAL_72_BELANJA_ITEMS = [];
+
+      // REKENING KORAN - SALDO AWAL & MANUAL DANA MASUK (KREDIT)
+      const DEFAULT_DANA_MASUK_ITEMS = [];
+
+      const [saldoAwal, setSaldoAwal] = useState(0);
+      const [danaMasukList, setDanaMasukList] = useState([]);
+
+      const [showSaldoAwalModal, setShowSaldoAwalModal] = useState(false);
+      const [saldoAwalInput, setSaldoAwalInput] = useState(0);
+      const [showDanaMasukModal, setShowDanaMasukModal] = useState(false);
+      const [showEditRekKoranModal, setShowEditRekKoranModal] = useState(false);
+      const [editRekKoranTab, setEditRekKoranTab] = useState("saldo");
+      const [danaMasukForm, setDanaMasukForm] = useState({
+        id: null,
+        tgl: "20/01/2026",
+        kredit: 0,
+        keterangan: ""
       });
 
-      // Logo Web & Kop Surat State (Base64 / URL)
-      const [customLogoUrl, setCustomLogoUrl] = useState(() => {
-        return localStorage.getItem(`bos_${currentUser.npsn}_custom_logo_v1`) || "";
-      });
+      // DATABASE BELANJA / TRANSAKSI BANK (murni dari Firebase)
+      const [belanjaBankList, setBelanjaBankList] = useState([]);
 
-      const [customKopSuratUrl, setCustomKopSuratUrl] = useState(() => {
-        return localStorage.getItem(`bos_${currentUser.npsn}_custom_kop_v1`) || "";
-      });
+      // State Manual Checkbox & Keterangan untuk Database Master RKAS (murni dari Firebase)
+      const [manualPurchasedMap, setManualPurchasedMap] = useState({});
+      const [manualKeteranganTextMap, setManualKeteranganTextMap] = useState({});
 
-      // Handlers Cloud Google Spreadsheet (Google Apps Script)
-      const handlePushDataToCloud = async (silent = false) => {
-        const url = (appsScriptUrl || cloudUrlInput || localStorage.getItem("bos_apps_script_url") || "").trim();
-        if (!url) {
-          if (!silent) {
-            alert("⚠️ URL Database belum diisi!\n\nSilakan masukkan URL Firebase atau Google Apps Script di menu 'Pengaturan Sekolah'.");
-            setCurrentView("pengaturan");
-          }
-          return;
-        }
+      // Handlers Cloud Firebase Realtime Database
+      const handlePushDataToCloud = async (silent = false, overrideState = null) => {
+        const baseUrl = normalizeFirebaseBaseUrl(appsScriptUrl || cloudUrlInput || SIBOS_FIREBASE_DB_URL);
         setCloudSyncStatus("syncing");
-        setCloudStatusMsg("Menyinkronkan ke Cloud...");
+        setCloudStatusMsg("Menyinkronkan ke Firebase...");
+        isPushingRef.current = true;
         try {
-          const dataToSave = {
-            headerInfo: headerInfo,
-            masterRkas: masterRkas,
-            perBulanData: perBulanData,
-            belanjaBankList: belanjaBankList,
-            danaMasukList: danaMasukList,
-            saldoAwal: saldoAwal,
-            manualPurchasedMap: manualPurchasedMap,
-            manualKeteranganTextMap: manualKeteranganTextMap,
-            customLogoUrl: customLogoUrl,
-            customKopSuratUrl: customKopSuratUrl
+          const nowIso = new Date().toISOString();
+          const stateToPush = overrideState || {
+            headerInfo,
+            masterRkas,
+            perBulanData,
+            belanjaBankList,
+            danaMasukList,
+            saldoAwal,
+            manualPurchasedMap,
+            manualKeteranganTextMap,
+            customLogoUrl,
+            customKopSuratUrl
           };
-
-          // --- FIREBASE MODE ---
-          if (url.includes("firebaseio.com") || url.includes("firebasedatabase.app")) {
-            if (!window.firebase.apps.length) {
-              window.firebase.initializeApp({ databaseURL: url });
-            }
-            const db = window.firebase.database();
-            await db.ref(`schools/${currentUser.npsn}/data`).set(dataToSave);
-            
-            const nowStr = new Date().toLocaleString("id-ID");
-            setCloudSyncStatus("synced");
-            setCloudLastSynced(nowStr);
-            localStorage.setItem(`bos_${currentUser.npsn}_last_cloud_sync`, nowStr);
-            setCloudStatusMsg(`Tersinkron (Firebase): ${nowStr}`);
-            if (!silent) {
-              alert(`✅ Sinkronisasi Firebase Berhasil!\n\nSeluruh data sekolah telah tersimpan seketika di Firebase Realtime Database.`);
-            }
-            return;
-          }
-
-          // --- GOOGLE APPS SCRIPT MODE ---
           const payload = {
-            action: "syncSchool",
-            npsn: currentUser.npsn,
-            data: dataToSave
+            updatedAt: nowIso,
+            headerInfo: stateToPush.headerInfo || headerInfo,
+            masterRkas: stateToPush.masterRkas || [],
+            perBulanData: stateToPush.perBulanData || normalizePerBulanData({}),
+            belanjaBankList: stateToPush.belanjaBankList || [],
+            danaMasukList: stateToPush.danaMasukList || [],
+            saldoAwal: Number(stateToPush.saldoAwal ?? 0),
+            manualPurchasedMap: stateToPush.manualPurchasedMap || {},
+            manualKeteranganTextMap: stateToPush.manualKeteranganTextMap || {},
+            customLogoUrl: stateToPush.customLogoUrl || "",
+            customKopSuratUrl: stateToPush.customKopSuratUrl || ""
           };
-          const res = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
+
+          const res = await fetch(`${baseUrl}/schools/${encodeURIComponent(currentUser.npsn)}/data.json`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
           });
-          const result = await res.json();
-          if (result.status === "success") {
-            const nowStr = new Date().toLocaleString("id-ID");
-            setCloudSyncStatus("synced");
-            setCloudLastSynced(nowStr);
-            localStorage.setItem(`bos_${currentUser.npsn}_last_cloud_sync`, nowStr);
-            setCloudStatusMsg(`Tersinkron: ${nowStr}`);
-            if (!silent) {
-              alert(`✅ Sinkronisasi Berhasil!\n\nSeluruh data sekolah telah tersimpan aman di Google Cloud Spreadsheet.`);
-            }
-          } else {
-            throw new Error(result.message || "Gagal menyimpan ke Google Cloud");
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+          lastSyncedUpdatedAtRef.current = nowIso;
+          const nowStr = new Date().toLocaleString("id-ID");
+          setCloudSyncStatus("synced");
+          setCloudLastSynced(nowStr);
+          setCloudStatusMsg(`Tersinkron Firebase: ${nowStr}`);
+          if (!silent) {
+            alert(`✅ Sinkronisasi Firebase Berhasil!\n\nSeluruh data sekolah "${payload.headerInfo.namaSekolah || currentUser.namaSekolah}" (NPSN: ${currentUser.npsn}) telah tersimpan di Firebase Realtime Database.\n\nData ini otomatis tersinkron di komputer, laptop, maupun HP!`);
           }
         } catch (err) {
-          console.error("Cloud push error:", err);
+          console.error("Firebase push error:", err);
           setCloudSyncStatus("error");
-          setCloudStatusMsg("Gagal sinkron cloud");
+          setCloudStatusMsg("Gagal sinkron Firebase");
           if (!silent) {
-            alert(`⚠️ Gagal menyinkronkan data ke Cloud:\n\n${err.message || err}`);
+            alert(`⚠️ Gagal menyinkronkan data ke Firebase Realtime Database:\n\n${err.message || err}`);
           }
+        } finally {
+          isPushingRef.current = false;
         }
       };
 
-      const handlePullDataFromCloud = async (silent = false) => {
-        const url = (appsScriptUrl || cloudUrlInput || localStorage.getItem("bos_apps_script_url") || "").trim();
-        if (!url) {
-          if (!silent) alert("⚠️ URL Database Cloud belum diisi!");
-          return;
-        }
+      const handlePullDataFromCloud = useCallback(async (silent = false) => {
+        const baseUrl = normalizeFirebaseBaseUrl(appsScriptUrl || cloudUrlInput || SIBOS_FIREBASE_DB_URL);
         setCloudSyncStatus("syncing");
-        setCloudStatusMsg("Mengambil data dari Cloud...");
-        
-        let d = null;
+        setCloudStatusMsg("Mengambil data dari Firebase...");
         try {
-          // --- FIREBASE MODE ---
-          if (url.includes("firebaseio.com") || url.includes("firebasedatabase.app")) {
-            if (!window.firebase.apps.length) {
-              window.firebase.initializeApp({ databaseURL: url });
-            }
-            const db = window.firebase.database();
-            const snapshot = await db.ref(`schools/${currentUser.npsn}/data`).once('value');
-            d = snapshot.val();
-            
-            if (!d) {
-               setCloudSyncStatus("synced");
-               setCloudStatusMsg("Tidak ada data di Firebase");
-               if (!silent) alert(`ℹ️ Belum ada data tersimpan di Firebase untuk NPSN ${currentUser.npsn}.`);
-               return;
-            }
-          } else {
-             // --- GOOGLE APPS SCRIPT MODE ---
-             const res = await fetch(`${url}?action=getSchoolData&npsn=${encodeURIComponent(currentUser.npsn)}`);
-             const result = await res.json();
-             if (result.status === "success" && result.data) {
-                d = result.data;
-             } else {
-                throw new Error("Gagal mengambil data dari Google Apps Script");
-             }
-          }
+          const res = await fetch(`${baseUrl}/schools/${encodeURIComponent(currentUser.npsn)}/data.json`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const d = await res.json();
 
-          if (d) {
-            let loadedCount = 0;
+          isApplyingRemoteRef.current = true;
 
-            if (d.headerInfo && typeof d.headerInfo === "object" && Object.keys(d.headerInfo).length > 0) {
-              setHeaderInfo(d.headerInfo);
-              localStorage.setItem(`bos_${currentUser.npsn}_header_info_v3`, JSON.stringify(d.headerInfo));
-              loadedCount++;
-            }
-            if (Array.isArray(d.masterRkas) && d.masterRkas.length > 0) {
-              setMasterRkas(d.masterRkas);
-              localStorage.setItem(`bos_${currentUser.npsn}_master_rkas_pdf_final`, JSON.stringify(d.masterRkas));
-              loadedCount++;
-            }
-            if (d.perBulanData && typeof d.perBulanData === "object" && Object.keys(d.perBulanData).length > 0) {
-              setPerBulanData(d.perBulanData);
-              localStorage.setItem(`bos_${currentUser.npsn}_perbulan_data_final_v20`, JSON.stringify(d.perBulanData));
-              loadedCount++;
-            }
-            if (Array.isArray(d.belanjaBankList) && d.belanjaBankList.length > 0) {
-              setBelanjaBankList(d.belanjaBankList);
-              localStorage.setItem(`bos_${currentUser.npsn}_belanja_bank_v6`, JSON.stringify(d.belanjaBankList));
-              loadedCount++;
-            }
-            if (Array.isArray(d.danaMasukList) && d.danaMasukList.length > 0) {
-              setDanaMasukList(d.danaMasukList);
-              localStorage.setItem(`bos_${currentUser.npsn}_dana_masuk_v1`, JSON.stringify(d.danaMasukList));
-              loadedCount++;
-            }
-            if (typeof d.saldoAwal === "number") {
-              setSaldoAwal(d.saldoAwal);
-              localStorage.setItem(`bos_${currentUser.npsn}_saldo_awal_v1`, String(d.saldoAwal));
-              loadedCount++;
-            }
-            if (d.manualPurchasedMap && typeof d.manualPurchasedMap === "object") {
-              setManualPurchasedMap(d.manualPurchasedMap);
-              localStorage.setItem(`bos_${currentUser.npsn}_manual_purchased_map_v4`, JSON.stringify(d.manualPurchasedMap));
-            }
-            if (d.manualKeteranganTextMap && typeof d.manualKeteranganTextMap === "object") {
-              setManualKeteranganTextMap(d.manualKeteranganTextMap);
-              localStorage.setItem(`bos_${currentUser.npsn}_manual_keterangan_text_map_v1`, JSON.stringify(d.manualKeteranganTextMap));
-            }
-            if (d.customLogoUrl) {
-              setCustomLogoUrl(d.customLogoUrl);
-              localStorage.setItem(`bos_${currentUser.npsn}_custom_logo_v1`, d.customLogoUrl);
-            }
-            if (d.customKopSuratUrl) {
-              setCustomKopSuratUrl(d.customKopSuratUrl);
-              localStorage.setItem(`bos_${currentUser.npsn}_custom_kop_v1`, d.customKopSuratUrl);
-            }
+          if (d && typeof d === "object") {
+            setHeaderInfo({
+              npsn: currentUser.npsn,
+              namaSekolah: currentUser.namaSekolah,
+              alamat: "",
+              kabupaten: "",
+              provinsi: "",
+              tahunAnggaran: "2026",
+              sumberDana: "BOS Reguler",
+              totalPenerimaan: 0,
+              kepalaSekolah: currentUser.kepalaSekolah || "",
+              bendaharaSekolah: "",
+              noRekening: "",
+              namaBank: "",
+              email: "",
+              noHp: "",
+              ...(d.headerInfo && typeof d.headerInfo === "object" ? d.headerInfo : {})
+            });
+            setMasterRkas(normalizeArrayData(d.masterRkas));
+            setPerBulanData(normalizePerBulanData(d.perBulanData));
+            setBelanjaBankList(normalizeArrayData(d.belanjaBankList));
+            setDanaMasukList(normalizeArrayData(d.danaMasukList));
+            setSaldoAwal(typeof d.saldoAwal === "number" ? d.saldoAwal : Number(d.saldoAwal || 0));
+            setManualPurchasedMap(normalizeObjectMap(d.manualPurchasedMap));
+            setManualKeteranganTextMap(normalizeObjectMap(d.manualKeteranganTextMap));
+            setCustomLogoUrl(d.customLogoUrl || "");
+            setCustomKopSuratUrl(d.customKopSuratUrl || "");
+            lastSyncedUpdatedAtRef.current = d.updatedAt || "";
 
             const nowStr = new Date().toLocaleString("id-ID");
             setCloudSyncStatus("synced");
             setCloudLastSynced(nowStr);
-            localStorage.setItem(`bos_${currentUser.npsn}_last_cloud_sync`, nowStr);
-            setCloudStatusMsg(`Tersinkron: ${nowStr}`);
+            setCloudStatusMsg(`Tersinkron Firebase: ${nowStr}`);
 
             if (!silent) {
-              if (loadedCount > 0) {
-                alert(`✅ Tarik Data Berhasil!\n\n${loadedCount} kategori data (Header, RKAS, Rincian Perbulan, Belanja Bank, Rekening Koran) berhasil dimuat dari Google Cloud ke perangkat ini.`);
-              } else {
-                alert(`ℹ️ Belum ada data tersimpan di Cloud untuk NPSN ${currentUser.npsn}.\n\nSilakan isi data atau lakukan sinkronisasi terlebih dahulu dari perangkat awal.`);
-              }
+              alert(`✅ Sinkronisasi dari Firebase Berhasil!\n\nSeluruh data terbaru untuk ${d.headerInfo?.namaSekolah || currentUser.namaSekolah} (NPSN: ${currentUser.npsn}) telah dimuat dari Firebase Realtime Database.`);
             }
           } else {
-            throw new Error(result.message || "Data tidak ditemukan");
+            // Jika sekolah baru dan belum ada node data di Firebase, inisialisasi di Firebase
+            const nowStr = new Date().toLocaleString("id-ID");
+            setCloudSyncStatus("synced");
+            setCloudLastSynced(nowStr);
+            setCloudStatusMsg(`Siap di Firebase: ${nowStr}`);
+            if (!silent) {
+              alert(`ℹ️ Ruang kerja sekolah untuk NPSN ${currentUser.npsn} siap dan terhubung ke Firebase Realtime Database.`);
+            }
           }
         } catch (err) {
-          console.error("Cloud pull error:", err);
+          console.error("Firebase pull error:", err);
           setCloudSyncStatus("error");
-          setCloudStatusMsg("Gagal ambil data");
+          setCloudStatusMsg("Gagal ambil data Firebase");
           if (!silent) {
-            alert(`⚠️ Gagal mengambil data dari Google Cloud:\n\n${err.message || err}`);
+            alert(`⚠️ Gagal mengambil data dari Firebase Realtime Database:\n\n${err.message || err}`);
           }
+        } finally {
+          isCloudReadyRef.current = true;
+          setTimeout(() => {
+            isApplyingRemoteRef.current = false;
+          }, 150);
         }
-      };
+      }, [appsScriptUrl, cloudUrlInput, currentUser.npsn, currentUser.namaSekolah, currentUser.kepalaSekolah]);
 
       const handleTestCloudConnection = async () => {
-        const url = (cloudUrlInput || appsScriptUrl || localStorage.getItem("bos_apps_script_url") || "").trim();
-        if (!url) {
-          alert("Silakan masukkan URL Web App Google Apps Script terlebih dahulu.");
-          return;
-        }
+        const rawUrl = (cloudUrlInput || appsScriptUrl || SIBOS_FIREBASE_DB_URL).trim();
+        const baseUrl = normalizeFirebaseBaseUrl(rawUrl);
         setCloudSyncStatus("syncing");
-        setCloudStatusMsg("Menguji koneksi...");
+        setCloudStatusMsg("Menguji koneksi Firebase...");
         try {
-          const res = await fetch(`${url}?action=ping`);
-          const json = await res.json();
-          if (json.status === "success") {
-            setCloudSyncStatus("synced");
-            setCloudStatusMsg("Koneksi Cloud Berhasil!");
-            if (onSaveAppsScriptUrl) onSaveAppsScriptUrl(url);
-            alert(`✅ Koneksi Berhasil!\n\nBackend Google Apps Script terhubung dengan sukses.\nSpreadsheet ID: ${json.spreadsheetId || '-'}\nNama: ${json.spreadsheetName || '-'}`);
-          } else {
-            throw new Error(json.message || "Respon tidak valid");
-          }
+          const res = await fetch(`${baseUrl}/schools/${encodeURIComponent(currentUser.npsn)}/data/headerInfo.json`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const info = await res.json();
+          setCloudSyncStatus("synced");
+          setCloudStatusMsg("Koneksi Firebase Aktif!");
+          if (onSaveAppsScriptUrl) onSaveAppsScriptUrl(rawUrl);
+          alert(`✅ Koneksi Firebase Realtime Database Berhasil!\n\nURL: ${baseUrl}\nSekolah: ${(info && info.namaSekolah) || currentUser.namaSekolah} (NPSN: ${currentUser.npsn})`);
         } catch (err) {
           setCloudSyncStatus("error");
-          setCloudStatusMsg("Gagal koneksi");
-          alert(`❌ Gagal terhubung ke Google Apps Script:\n\n${err.message || err}\n\nPeriksa kembali apakah:\n1. URL berakhiran '/exec' (bukan /edit atau /dev)\n2. Deploy > Who has access diatur ke 'Anyone'\n3. Izin akses (Authorization) sudah diberikan`);
+          setCloudStatusMsg("Gagal koneksi Firebase");
+          alert(`❌ Gagal terhubung ke Firebase Realtime Database:\n\n${err.message || err}`);
         }
       };
 
-      // Auto-pull dari Cloud jika data master lokal masih kosong saat membuka ruang kerja
+      // 1. Muat data awal langsung dari Firebase saat membuka ruang kerja sekolah
       useEffect(() => {
-        const activeUrl = (appsScriptUrl || localStorage.getItem("bos_apps_script_url") || "").trim();
-        if (activeUrl && (!masterRkas || masterRkas.length === 0)) {
-          handlePullDataFromCloud(true);
-        }
-      }, []);
+        isCloudReadyRef.current = false;
+        handlePullDataFromCloud(true);
+      }, [currentUser.npsn]);
 
-      // Auto-sync ke Cloud
-      const lastSyncPayloadRef = useRef("");
+      // 2. Auto-Save ke Firebase setiap kali ada perubahan data apa pun di aplikasi
       useEffect(() => {
-        const payloadToSync = {
-          headerInfo: headerInfo,
-          masterRkas: masterRkas,
-          perBulanData: perBulanData,
-          belanjaBankList: belanjaBankList,
-          danaMasukList: danaMasukList,
-          saldoAwal: saldoAwal,
-          manualPurchasedMap: manualPurchasedMap,
-          manualKeteranganTextMap: manualKeteranganTextMap,
-          customLogoUrl: customLogoUrl,
-          customKopSuratUrl: customKopSuratUrl
-        };
-        const payloadStr = JSON.stringify(payloadToSync);
-        if (lastSyncPayloadRef.current === payloadStr) return;
-        
-        lastSyncPayloadRef.current = payloadStr;
-        
-        const activeUrl = (appsScriptUrl || localStorage.getItem("bos_apps_script_url") || "").trim();
-        if (activeUrl) {
-          const timeoutId = setTimeout(() => {
-             handlePushDataToCloud(true);
-          }, 3000);
-          return () => clearTimeout(timeoutId);
+        if (!isCloudReadyRef.current) return;
+        if (isApplyingRemoteRef.current) return;
+
+        if (autoSaveTimerRef.current) {
+          clearTimeout(autoSaveTimerRef.current);
         }
-      }, [headerInfo, masterRkas, perBulanData, belanjaBankList, danaMasukList, saldoAwal, manualPurchasedMap, manualKeteranganTextMap, customLogoUrl, customKopSuratUrl, appsScriptUrl]);
+        autoSaveTimerRef.current = setTimeout(() => {
+          handlePushDataToCloud(true, {
+            headerInfo,
+            masterRkas,
+            perBulanData,
+            belanjaBankList,
+            danaMasukList,
+            saldoAwal,
+            manualPurchasedMap,
+            manualKeteranganTextMap,
+            customLogoUrl,
+            customKopSuratUrl
+          });
+        }, 400);
+
+        return () => {
+          if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+        };
+      }, [
+        headerInfo,
+        masterRkas,
+        perBulanData,
+        belanjaBankList,
+        danaMasukList,
+        saldoAwal,
+        manualPurchasedMap,
+        manualKeteranganTextMap,
+        customLogoUrl,
+        customKopSuratUrl
+      ]);
+
+      // 3. Auto-Pull Realtime dari Firebase jika ada perubahan dari perangkat lain (HP / Komputer lain)
+      useEffect(() => {
+        const baseUrl = normalizeFirebaseBaseUrl(appsScriptUrl || cloudUrlInput || SIBOS_FIREBASE_DB_URL);
+        const checkRemoteUpdate = async () => {
+          if (!isCloudReadyRef.current || isPushingRef.current || autoSaveTimerRef.current) return;
+          try {
+            const res = await fetch(`${baseUrl}/schools/${encodeURIComponent(currentUser.npsn)}/data/updatedAt.json`);
+            if (!res.ok) return;
+            const remoteUpdatedAt = await res.json();
+            if (remoteUpdatedAt && remoteUpdatedAt !== lastSyncedUpdatedAtRef.current) {
+              await handlePullDataFromCloud(true);
+            }
+          } catch (e) {}
+        };
+
+        const intervalId = setInterval(checkRemoteUpdate, 4000);
+        const onFocus = () => checkRemoteUpdate();
+        window.addEventListener("focus", onFocus);
+        return () => {
+          clearInterval(intervalId);
+          window.removeEventListener("focus", onFocus);
+        };
+      }, [appsScriptUrl, cloudUrlInput, currentUser.npsn, handlePullDataFromCloud]);
 
       // Handlers Pengaturan & Media
-      const handleSavePengaturan = (e) => {
+      const handleSavePengaturan = async (e) => {
         if (e && e.preventDefault) e.preventDefault();
-        localStorage.setItem(`bos_${currentUser.npsn}_header_info_v3`, JSON.stringify(headerInfo));
-        if (customLogoUrl) {
-          localStorage.setItem(`bos_${currentUser.npsn}_custom_logo_v1`, customLogoUrl);
-        } else {
-          localStorage.removeItem(`bos_${currentUser.npsn}_custom_logo_v1`);
-        }
-        if (customKopSuratUrl) {
-          localStorage.setItem(`bos_${currentUser.npsn}_custom_kop_v1`, customKopSuratUrl);
-        } else {
-          localStorage.removeItem(`bos_${currentUser.npsn}_custom_kop_v1`);
-        }
         if (onUpdateAccountInfo) {
-          onUpdateAccountInfo(headerInfo);
+          await onUpdateAccountInfo(headerInfo);
         }
 
-        // Simpan URL Apps Script jika diubah
-        const cleanedUrl = (cloudUrlInput || "").trim();
+        const cleanedUrl = (cloudUrlInput || SIBOS_FIREBASE_DB_URL).trim();
         if (cleanedUrl && onSaveAppsScriptUrl) {
           onSaveAppsScriptUrl(cleanedUrl);
         }
 
-        // Auto upload ke Cloud Google Spreadsheet jika URL ada
-        if (cleanedUrl || appsScriptUrl) {
-          handlePushDataToCloud(true);
-        }
+        await handlePushDataToCloud(true, {
+          headerInfo,
+          masterRkas,
+          perBulanData,
+          belanjaBankList,
+          danaMasukList,
+          saldoAwal,
+          manualPurchasedMap,
+          manualKeteranganTextMap,
+          customLogoUrl,
+          customKopSuratUrl
+        });
 
-        alert("✅ Pengaturan Sekolah, Logo Web, & Kop Surat berhasil disimpan dan disinkronkan ke Cloud!");
+        alert("✅ Pengaturan Sekolah, Logo Web, & Kop Surat berhasil disimpan ke Firebase Realtime Database!");
       };
 
       const handleUploadLogoFile = (e) => {
@@ -1688,8 +1638,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           reader.onload = (event) => {
             const result = event.target.result;
             setCustomLogoUrl(result);
-            localStorage.setItem(`bos_${currentUser.npsn}_custom_logo_v1`, result);
-            alert("✅ Logo Web Aplikasi berhasil diunggah!");
+            alert("✅ Logo Web Aplikasi berhasil diunggah dan disinkronkan ke Firebase!");
           };
           reader.readAsDataURL(file);
         }
@@ -1702,8 +1651,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           reader.onload = (event) => {
             const result = event.target.result;
             setCustomKopSuratUrl(result);
-            localStorage.setItem(`bos_${currentUser.npsn}_custom_kop_v1`, result);
-            alert("✅ Gambar Kop Surat berhasil diunggah!");
+            alert("✅ Gambar Kop Surat berhasil diunggah dan disinkronkan ke Firebase!");
           };
           reader.readAsDataURL(file);
         }
@@ -1712,8 +1660,8 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
       const handleResetPengaturanDefault = () => {
         if (confirm("Kosongkan Pengaturan Sekolah, Logo, dan Kop Surat?")) {
           const defaultHeader = {
-            npsn: "",
-            namaSekolah: "",
+            npsn: currentUser.npsn || "",
+            namaSekolah: currentUser.namaSekolah || "",
             alamat: "",
             kabupaten: "",
             provinsi: "",
@@ -1730,114 +1678,12 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           setHeaderInfo(defaultHeader);
           setCustomLogoUrl("");
           setCustomKopSuratUrl("");
-          localStorage.setItem(`bos_${currentUser.npsn}_header_info_v3`, JSON.stringify(defaultHeader));
-          localStorage.removeItem(`bos_${currentUser.npsn}_custom_logo_v1`);
-          localStorage.removeItem(`bos_${currentUser.npsn}_custom_kop_v1`);
-          alert("✅ Pengaturan berhasil dikosongkan!");
+          alert("✅ Pengaturan berhasil dikosongkan dan disinkronkan ke Firebase!");
         }
       };
 
-      // DATABASE MASTER RKAS (PERSISTENT & DELETABLE)
-      const [masterRkas, setMasterRkas] = useState(() => {
-        const saved = localStorage.getItem(`bos_${currentUser.npsn}_master_rkas_pdf_final`);
-        if (saved !== null) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) return parsed;
-          } catch(e) {}
-        }
-        if (currentUser && currentUser.npsn === "20231556") return RKAS_PDF_165_ITEMS;
-        return [];
-      });
-
-      // DATABASE BELANJA / TRANSAKSI BANK (72 ITEM RESMI DARI DOKUMEN PDF LENGKAP)
-      const REAL_72_BELANJA_ITEMS = [];
-
-      // REKENING KORAN - SALDO AWAL & MANUAL DANA MASUK (KREDIT)
-      const DEFAULT_DANA_MASUK_ITEMS = [];
-
-      const [saldoAwal, setSaldoAwal] = useState(() => {
-        const saved = localStorage.getItem(`bos_${currentUser.npsn}_saldo_awal_v1`);
-        if (saved !== null) {
-          const num = Number(saved);
-          if (!isNaN(num) && num >= 0) return num;
-        }
-        return 0;
-      });
-
-      useEffect(() => {
-        localStorage.setItem(`bos_${currentUser.npsn}_saldo_awal_v1`, String(saldoAwal));
-      }, [saldoAwal]);
-
-      const [danaMasukList, setDanaMasukList] = useState(() => {
-        const saved = localStorage.getItem(`bos_${currentUser.npsn}_dana_masuk_v1`);
-        if (saved !== null) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) return parsed;
-          } catch(e) {}
-        }
-        localStorage.setItem(`bos_${currentUser.npsn}_dana_masuk_v1`, JSON.stringify([]));
-        return [];
-      });
-
-      useEffect(() => {
-        localStorage.setItem(`bos_${currentUser.npsn}_dana_masuk_v1`, JSON.stringify(danaMasukList));
-      }, [danaMasukList]);
-
-      const [showSaldoAwalModal, setShowSaldoAwalModal] = useState(false);
-      const [saldoAwalInput, setSaldoAwalInput] = useState(0);
-      const [showDanaMasukModal, setShowDanaMasukModal] = useState(false);
-      const [showEditRekKoranModal, setShowEditRekKoranModal] = useState(false);
-      const [editRekKoranTab, setEditRekKoranTab] = useState("saldo");
-      const [danaMasukForm, setDanaMasukForm] = useState({
-        id: null,
-        tgl: "20/01/2026",
-        kredit: 0,
-        keterangan: ""
-      });
-
-      // DATABASE BELANJA / TRANSAKSI BANK
-      const [belanjaBankList, setBelanjaBankList] = useState(() => {
-        const saved = localStorage.getItem(`bos_${currentUser.npsn}_belanja_bank_v6`);
-        if (saved !== null) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) return parsed;
-          } catch(e) {}
-        }
-        localStorage.setItem(`bos_${currentUser.npsn}_belanja_bank_v6`, JSON.stringify([]));
-        return [];
-      });
-
-      // State Manual Checkbox untuk Database Master RKAS
-      const [manualPurchasedMap, setManualPurchasedMap] = useState(() => {
-        const saved = localStorage.getItem(`bos_${currentUser.npsn}_manual_purchased_map_v4`);
-        if (saved) {
-          try {
-            return JSON.parse(saved);
-          } catch(e) {}
-        }
-        return {};
-      });
-
-      // State Manual Text Keterangan untuk Database Master RKAS
-      const [manualKeteranganTextMap, setManualKeteranganTextMap] = useState(() => {
-        const saved = localStorage.getItem(`bos_${currentUser.npsn}_manual_keterangan_text_map_v1`);
-        if (saved) {
-          try {
-            return JSON.parse(saved);
-          } catch(e) {}
-        }
-        return {};
-      });
-
       const handleKeteranganTextChange = (no, text) => {
-        setManualKeteranganTextMap(prev => {
-          const next = { ...prev, [no]: text };
-          localStorage.setItem(`bos_${currentUser.npsn}_manual_keterangan_text_map_v1`, JSON.stringify(next));
-          return next;
-        });
+        setManualKeteranganTextMap(prev => ({ ...prev, [no]: text }));
       };
 
       const toggleManualPurchased = (m, checked) => {
@@ -1846,14 +1692,12 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           next[m.no] = checked;
 
           if (m.level === "sub") {
-            // Centang / hilangkan centang seluruh item anak di bawah sub-kegiatan ini
             masterRkas.forEach(x => {
               if (x.kodeKegiatan === m.kodeKegiatan && x.no !== m.no) {
                 next[x.no] = checked;
               }
             });
           } else if (m.level === "item") {
-            // Jika item anak diubah, periksa apakah seluruh sibling di sub-kegiatan yang sama tercentang
             const siblingItems = masterRkas.filter(x => x.kodeKegiatan === m.kodeKegiatan && x.level === "item");
             const parentSub = masterRkas.find(x => x.kodeKegiatan === m.kodeKegiatan && x.level === "sub");
             if (parentSub && siblingItems.length > 0) {
@@ -1862,7 +1706,6 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
             }
           }
 
-          localStorage.setItem(`bos_${currentUser.npsn}_manual_purchased_map_v4`, JSON.stringify(next));
           return next;
         });
       };
@@ -1873,10 +1716,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
       const [selectedRekKoranRekening, setSelectedRekKoranRekening] = useState("Semua");
       const [rekKoranViewMode, setRekKoranViewMode] = useState("detail");
 
-      const handleSaveMasterCheckboxes = () => {
-        localStorage.setItem(`bos_${currentUser.npsn}_manual_purchased_map_v4`, JSON.stringify(manualPurchasedMap));
-        localStorage.setItem(`bos_${currentUser.npsn}_manual_keterangan_text_map_v1`, JSON.stringify(manualKeteranganTextMap));
-        alert("✅ Perubahan centang Aksi & Keterangan manual Master RKAS berhasil disimpan dan terintegrasi!");
+      const handleSaveMasterCheckboxes = async () => {
+        await handlePushDataToCloud(true);
+        alert("✅ Perubahan centang Aksi & Keterangan manual Master RKAS berhasil disimpan ke Firebase!");
       };
 
       // 1. Download Backup Data Master RKAS (Wajib)
@@ -1917,8 +1759,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         const applyMasterItems = (items, fileLabel) => {
           const finalItems = items || [];
           setMasterRkas(finalItems);
-          localStorage.setItem(`bos_${currentUser.npsn}_master_rkas_pdf_final`, JSON.stringify(finalItems));
-          alert(`✅ IMPOR MASTER RKAS BERHASIL!\n\nFile "${fileLabel}" telah berhasil diproses dan menyajikan ${finalItems.length} item data ke Database Master RKAS.`);
+          alert(`✅ IMPOR MASTER RKAS BERHASIL!\n\nFile "${fileLabel}" telah berhasil diproses dan menyajikan ${finalItems.length} item data ke Database Master RKAS (tersinkron ke Firebase).`);
         };
 
         // 1. File PDF (.pdf)
@@ -2094,12 +1935,10 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
               if (parsed.masterRkas && Array.isArray(parsed.masterRkas)) {
                 itemsToLoad = parsed.masterRkas;
                 if (parsed.manualPurchasedMap) {
-                  setManualPurchasedMap(parsed.manualPurchasedMap);
-                  localStorage.setItem(`bos_${currentUser.npsn}_manual_purchased_map_v4`, JSON.stringify(parsed.manualPurchasedMap));
+                  setManualPurchasedMap(normalizeObjectMap(parsed.manualPurchasedMap));
                 }
                 if (parsed.manualKeteranganTextMap) {
-                  setManualKeteranganTextMap(parsed.manualKeteranganTextMap);
-                  localStorage.setItem(`bos_${currentUser.npsn}_manual_keterangan_text_map_v1`, JSON.stringify(parsed.manualKeteranganTextMap));
+                  setManualKeteranganTextMap(normalizeObjectMap(parsed.manualKeteranganTextMap));
                 }
               } else if (Array.isArray(parsed)) {
                 itemsToLoad = parsed;
@@ -2133,17 +1972,13 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           }
         }
 
-        const confirmFinal = confirm("🚨 KONFIRMASI TERAKHIR:\n\nSemua data item dan centangan Aksi Master RKAS akan DIHAPUS SEKARANG.\n\nLanjutkan penghapusan?");
+        const confirmFinal = confirm("🚨 KONFIRMASI TERAKHIR:\n\nSemua data item dan centangan Aksi Master RKAS akan DIHAPUS SEKARANG dari Firebase.\n\nLanjutkan penghapusan?");
         if (confirmFinal) {
           setMasterRkas([]);
-          setPerBulanData({});
+          setPerBulanData(normalizePerBulanData({}));
           setManualPurchasedMap({});
           setManualKeteranganTextMap({});
-          localStorage.setItem(`bos_${currentUser.npsn}_master_rkas_pdf_final`, JSON.stringify([]));
-          localStorage.setItem(`bos_${currentUser.npsn}_perbulan_data_final_v20`, JSON.stringify({}));
-          localStorage.setItem(`bos_${currentUser.npsn}_manual_purchased_map_v4`, JSON.stringify({}));
-          localStorage.setItem(`bos_${currentUser.npsn}_manual_keterangan_text_map_v1`, JSON.stringify({}));
-          alert("🗑️ Semua Data Master RKAS telah berhasil dihapus (Pagu Belum Dibelanjakan & Sisa Saldo = Rp 0). Data tidak akan muncul kembali saat di-refresh.");
+          alert("🗑️ Semua Data Master RKAS telah berhasil dihapus dari Firebase (Pagu Belum Dibelanjakan & Sisa Saldo = Rp 0).");
         }
       };
 
@@ -2166,9 +2001,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
             "Desember": FEBRUARI_PERBULAN_12_ITEMS
           };
           setPerBulanData(defaultPerBulan);
-          localStorage.setItem(`bos_${currentUser.npsn}_master_rkas_pdf_final`, JSON.stringify(RKAS_PDF_165_ITEMS));
-          localStorage.setItem(`bos_${currentUser.npsn}_perbulan_data_final_v20`, JSON.stringify(defaultPerBulan));
-          alert("✅ Database Master RKAS & Rincian Perbulan berhasil dikembalikan ke 165 Item PDF Resmi!");
+          alert("✅ Database Master RKAS & Rincian Perbulan berhasil dikembalikan dan disinkronkan ke Firebase!");
         }
       };
 
@@ -2224,8 +2057,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         const restoreItems = (items, fileLabel) => {
           const finalItems = items || [];
           setMasterRkas(finalItems);
-          localStorage.setItem(`bos_${currentUser.npsn}_master_rkas_pdf_final`, JSON.stringify(finalItems));
-          alert(`✅ RESTORE DATA BERHASIL!\n\nTotal ${finalItems.length} item data Master RKAS dipulihkan dari file ${fileLabel}.`);
+          alert(`✅ RESTORE DATA BERHASIL!\n\nTotal ${finalItems.length} item data Master RKAS dipulihkan dari file ${fileLabel} dan disinkronkan ke Firebase.`);
         };
 
         if (fileName.endsWith('.json')) {
@@ -2236,15 +2068,12 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
               if (parsed.masterRkas && Array.isArray(parsed.masterRkas)) {
                 setMasterRkas(parsed.masterRkas);
                 if (parsed.manualPurchasedMap) {
-                  setManualPurchasedMap(parsed.manualPurchasedMap);
-                  localStorage.setItem(`bos_${currentUser.npsn}_manual_purchased_map_v4`, JSON.stringify(parsed.manualPurchasedMap));
+                  setManualPurchasedMap(normalizeObjectMap(parsed.manualPurchasedMap));
                 }
                 if (parsed.manualKeteranganTextMap) {
-                  setManualKeteranganTextMap(parsed.manualKeteranganTextMap);
-                  localStorage.setItem(`bos_${currentUser.npsn}_manual_keterangan_text_map_v1`, JSON.stringify(parsed.manualKeteranganTextMap));
+                  setManualKeteranganTextMap(normalizeObjectMap(parsed.manualKeteranganTextMap));
                 }
-                localStorage.setItem(`bos_${currentUser.npsn}_master_rkas_pdf_final`, JSON.stringify(parsed.masterRkas));
-                alert(`✅ RESTORE HASIL BACKUP BERHASIL!\n\nTotal ${parsed.masterRkas.length} item data Master RKAS & catatan Keterangan berhasil dipulihkan dari file backup.`);
+                alert(`✅ RESTORE HASIL BACKUP BERHASIL!\n\nTotal ${parsed.masterRkas.length} item data Master RKAS & catatan Keterangan berhasil dipulihkan ke Firebase.`);
                 return;
               } else if (Array.isArray(parsed)) {
                 restoreItems(parsed, file.name);
@@ -2306,12 +2135,8 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
       // HELPER DATABASE BELANJA (HAPUS, BACKUP, RESTORE, RESET)
       const handleDeleteBelanja = (id) => {
         if (confirm("Apakah Anda yakin ingin menghapus item transaksi belanja ini?\n\nPenghapusan ini bersifat permanen.")) {
-          setBelanjaBankList(prev => {
-            const next = prev.filter(item => item.id !== id);
-            localStorage.setItem(`bos_${currentUser.npsn}_belanja_bank_v6`, JSON.stringify(next));
-            return next;
-          });
-          alert("🗑️ Item transaksi belanja berhasil dihapus!");
+          setBelanjaBankList(prev => prev.filter(item => item.id !== id));
+          alert("🗑️ Item transaksi belanja berhasil dihapus dari Firebase!");
         }
       };
 
@@ -2357,8 +2182,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
               }
               if (items) {
                 setBelanjaBankList(items);
-                localStorage.setItem(`bos_${currentUser.npsn}_belanja_bank_v6`, JSON.stringify(items));
-                alert(`✅ RESTORE HASIL BACKUP BELANJA BERHASIL!\n\nTotal ${items.length} transaksi belanja berhasil dipulihkan.`);
+                alert(`✅ RESTORE HASIL BACKUP BELANJA BERHASIL!\n\nTotal ${items.length} transaksi belanja berhasil dipulihkan dan disinkronkan ke Firebase.`);
                 return;
               }
             }
@@ -2373,8 +2197,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
       const handleResetDefaultBelanja = () => {
         if (confirm("Kembalikan Database Belanja ke 72 Item Transaksi Bank Asli?")) {
           setBelanjaBankList(REAL_72_BELANJA_ITEMS);
-          localStorage.setItem(`bos_${currentUser.npsn}_belanja_bank_v6`, JSON.stringify(REAL_72_BELANJA_ITEMS));
-          alert("✅ Database Belanja berhasil dikembalikan ke 72 Item Transaksi Bank Asli!");
+          alert("✅ Database Belanja berhasil dikembalikan dan disinkronkan ke Firebase!");
         }
       };
 
@@ -2455,15 +2278,6 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         sumberDana: "BOS Reguler",
         tglTransaksiSI: "06/03/2026",
       });
-
-      // Save LocalStorage
-      useEffect(() => {
-        localStorage.setItem(`bos_${currentUser.npsn}_master_rkas_pdf_final`, JSON.stringify(masterRkas));
-      }, [masterRkas]);
-
-      useEffect(() => {
-        localStorage.setItem(`bos_${currentUser.npsn}_belanja_bank_v6`, JSON.stringify(belanjaBankList));
-      }, [belanjaBankList]);
 
       // Set Uraian / Item yang SUDAH DIBELANJAKAN untuk Highlight KUNING
       const purchasedUraianSet = useMemo(() => {
@@ -2930,12 +2744,10 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
       };
 
       const handleResetRekKoranDefault = () => {
-        if (confirm("Reset data Saldo Awal & Dana Masuk ke default (Rp 851.793 & Dana BOS 2025)?")) {
+        if (confirm("Reset data Saldo Awal & Dana Masuk ke default (Rp 0)?")) {
           setSaldoAwal(0);
           setDanaMasukList(DEFAULT_DANA_MASUK_ITEMS);
-          localStorage.setItem(`bos_${currentUser.npsn}_saldo_awal_v1`, "0");
-          localStorage.setItem(`bos_${currentUser.npsn}_dana_masuk_v1`, JSON.stringify(DEFAULT_DANA_MASUK_ITEMS));
-          alert("✅ Data Rekening Koran berhasil di-reset ke nilai default!");
+          alert("✅ Data Rekening Koran berhasil di-reset dan disinkronkan ke Firebase!");
         }
       };
 
@@ -3339,15 +3151,13 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
             const emptyData = {};
             MONTHS.forEach(m => { emptyData[m] = []; });
             setPerBulanData(emptyData);
-            localStorage.setItem(`bos_${currentUser.npsn}_perbulan_data_final_v20`, JSON.stringify(emptyData));
-            alert("🗑️ Semua Data Anggaran Perbulan (Januari - Desember) berhasil dihapus!");
+            alert("🗑️ Semua Data Anggaran Perbulan (Januari - Desember) berhasil dihapus dan disinkronkan ke Firebase!");
           } else {
             setPerBulanData(prev => {
               const next = { ...prev, [targetMonth]: [] };
-              localStorage.setItem(`bos_${currentUser.npsn}_perbulan_data_final_v20`, JSON.stringify(next));
               return next;
             });
-            alert(`🗑️ Data Anggaran Kertas Kerja ${monthLabel} berhasil dihapus!`);
+            alert(`🗑️ Data Anggaran Kertas Kerja ${monthLabel} berhasil dihapus dan disinkronkan ke Firebase!`);
           }
         }
       };
@@ -3722,7 +3532,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
                 {/* SCHOOL INFO PILL & LOGOUT BUTTON */}
                 <div className="flex items-center gap-2 pl-2 border-l border-slate-300">
-                  {/* TOMBOL CLOUD SYNC QUICK ACTION */}
+                  {/* TOMBOL FIREBASE SYNC QUICK ACTION */}
                   <button
                     type="button"
                     onClick={() => handlePushDataToCloud(false)}
@@ -3734,19 +3544,15 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
                         : cloudSyncStatus === "error"
                         ? "bg-red-50 text-red-700 border-red-300 hover:bg-red-100"
-                        : (appsScriptUrl || cloudUrlInput)
-                        ? "bg-sky-50 text-sky-700 border-sky-300 hover:bg-sky-100"
-                        : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                        : "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100"
                     }`}
-                    title={cloudLastSynced ? `Terakhir disinkronkan ke Cloud: ${cloudLastSynced}` : "Klik untuk menyinkronkan data ke Cloud Google"}
+                    title={cloudLastSynced ? `Terakhir disinkronkan ke Firebase: ${cloudLastSynced}` : "Klik untuk menyinkronkan data ke Firebase Realtime Database"}
                   >
-                    <span>{cloudSyncStatus === "syncing" ? "⏳" : "☁️"}</span>
+                    <span>{cloudSyncStatus === "syncing" ? "⏳" : "🔥"}</span>
                     <span className="hidden md:inline">
-                      {cloudSyncStatus === "syncing" ? "Menyinkronkan..." : ((appsScriptUrl || cloudUrlInput) ? "Cloud Aktif" : "Hubungkan Cloud")}
+                      {cloudSyncStatus === "syncing" ? "Menyinkronkan..." : "Firebase Aktif"}
                     </span>
-                    {(appsScriptUrl || cloudUrlInput) && (
-                      <span className={`w-2 h-2 rounded-full ${cloudSyncStatus === "synced" ? "bg-emerald-500" : (cloudSyncStatus === "error" ? "bg-red-500" : "bg-sky-500")}`}></span>
-                    )}
+                    <span className={`w-2 h-2 rounded-full ${cloudSyncStatus === "synced" ? "bg-emerald-500" : (cloudSyncStatus === "error" ? "bg-red-500" : "bg-amber-500")}`}></span>
                   </button>
 
                   <div className="hidden lg:flex flex-col text-right">
@@ -5174,7 +4980,6 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                               type="button"
                               onClick={() => {
                                 setCustomLogoUrl("");
-                                localStorage.removeItem(`bos_${currentUser.npsn}_custom_logo_v1`);
                               }}
                               className="px-2.5 py-1 bg-red-50 text-red-600 border border-red-200 font-bold text-xs rounded hover:bg-red-100"
                             >
@@ -5214,9 +5019,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                                 type="button"
                                 onClick={() => {
                                   setCustomKopSuratUrl("");
-                                  localStorage.setItem(`bos_${currentUser.npsn}_custom_kop_v1`, "");
-                                  localStorage.removeItem(`bos_${currentUser.npsn}_custom_kop_v1`);
-                                  alert("🗑️ Gambar Kop Surat berhasil dihapus!");
+                                  alert("🗑️ Gambar Kop Surat berhasil dihapus dari Firebase!");
                                 }}
                                 className="px-2.5 py-1 bg-red-50 text-red-600 border border-red-200 font-bold text-xs rounded hover:bg-red-100 cursor-pointer"
                               >
@@ -5239,7 +5042,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                       <div className="flex flex-wrap items-center justify-between border-b pb-3 gap-2">
                         <div>
                           <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                            🔐 Keamanan & Perubahan Password Akun Sekolah
+                            🔐 Keamanan &amp; Perubahan Password Akun Sekolah
                           </h3>
                           <p className="text-xs text-slate-500 mt-0.5">
                             Ganti password akun login untuk sekolah Anda. Standar awal akun baru adalah nomor NPSN.
@@ -5303,16 +5106,16 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                       </div>
                     </div>
 
-                    {/* CARD 6: DATABASE CLOUD & INTEGRASI GOOGLE APPS SCRIPT */}
+                    {/* CARD 6: DATABASE CLOUD FIREBASE REALTIME */}
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
                       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white flex items-center justify-center text-xl shadow-md shadow-sky-500/20">
-                            ☁️
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white flex items-center justify-center text-xl shadow-md shadow-amber-500/20">
+                            🔥
                           </div>
                           <div>
                             <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                              Database Cloud Google (Google Apps Script)
+                              Database Cloud Firebase Realtime
                               <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
                                 cloudSyncStatus === "synced" 
                                   ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
@@ -5320,15 +5123,13 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                                   ? "bg-amber-100 text-amber-700 border border-amber-300 animate-pulse"
                                   : cloudSyncStatus === "error"
                                   ? "bg-red-100 text-red-700 border border-red-300"
-                                  : (appsScriptUrl || cloudUrlInput)
-                                  ? "bg-sky-100 text-sky-700 border border-sky-300"
-                                  : "bg-slate-100 text-slate-600 border border-slate-200"
+                                  : "bg-amber-100 text-amber-700 border border-amber-300"
                               }`}>
-                                {cloudSyncStatus === "synced" ? "● Terhubung & Sinkron" : (cloudSyncStatus === "syncing" ? "● Sedang Sinkron..." : (cloudSyncStatus === "error" ? "● Gagal Koneksi" : ((appsScriptUrl || cloudUrlInput) ? "● Siap Digunakan" : "○ Belum Diatur")))}
+                                {cloudSyncStatus === "synced" ? "● Terhubung & Sinkron" : (cloudSyncStatus === "syncing" ? "● Sedang Sinkron..." : (cloudSyncStatus === "error" ? "● Gagal Koneksi" : "● Firebase Aktif"))}
                               </span>
                             </h3>
                             <p className="text-xs text-slate-500">
-                              Penyimpanan online terpusat agar data yang diunggah dapat tampil dan diakses dari HP (smartphone), tablet, laptop, dan browser lain.
+                              Penyimpanan tunggal terpusat di Firebase Realtime Database agar seluruh data langsung tersinkron di semua aplikasi baik di komputer maupun di HP.
                             </p>
                           </div>
                         </div>
@@ -5336,9 +5137,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         <button
                           type="button"
                           onClick={() => setShowCloudGuideModal(true)}
-                          className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                          className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
                         >
-                          <span>📖</span> Panduan Pasang Code.gs
+                          <span>📖</span> Info Sinkronisasi Firebase
                         </button>
                       </div>
 
@@ -5353,7 +5154,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             : "bg-sky-50 border-sky-200 text-sky-800"
                         }`}>
                           <span className="flex items-center gap-1.5">
-                            <span>{cloudSyncStatus === "syncing" ? "⏳" : (cloudSyncStatus === "synced" ? "✅" : (cloudSyncStatus === "error" ? "⚠️" : "ℹ️"))}</span>
+                            <span>{cloudSyncStatus === "syncing" ? "⏳" : (cloudSyncStatus === "synced" ? "✅" : (cloudSyncStatus === "error" ? "⚠️" : "🔥"))}</span>
                             <span>{cloudStatusMsg}</span>
                           </span>
                           {cloudLastSynced && (
@@ -5367,15 +5168,15 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <label className="block text-xs font-bold text-slate-700">
-                            URL Web App Google Apps Script (/exec):
+                            URL Firebase Realtime Database:
                           </label>
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
                               onClick={() => {
-                                setCloudUrlInput(SIBOS_OFFICIAL_GAS_URL);
-                                if (onSaveAppsScriptUrl) onSaveAppsScriptUrl(SIBOS_OFFICIAL_GAS_URL);
-                                alert("✅ Link Web App default telah diatur!");
+                                setCloudUrlInput(SIBOS_FIREBASE_DB_URL);
+                                if (onSaveAppsScriptUrl) onSaveAppsScriptUrl(SIBOS_FIREBASE_DB_URL);
+                                alert("✅ Link Firebase Realtime Database default telah diatur!");
                               }}
                               className="text-[11px] text-blue-600 hover:underline font-semibold cursor-pointer"
                             >
@@ -5385,8 +5186,8 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             <button
                               type="button"
                               onClick={() => {
-                                navigator.clipboard.writeText(cloudUrlInput || SIBOS_OFFICIAL_GAS_URL);
-                                alert("📋 Link Exec Google Apps Script berhasil disalin ke clipboard!");
+                                navigator.clipboard.writeText(cloudUrlInput || SIBOS_FIREBASE_DB_URL);
+                                alert("📋 Link Firebase Realtime Database berhasil disalin ke clipboard!");
                               }}
                               className="text-[11px] text-emerald-600 hover:underline font-semibold cursor-pointer"
                             >
@@ -5399,8 +5200,8 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             type="url"
                             value={cloudUrlInput}
                             onChange={(e) => setCloudUrlInput(e.target.value)}
-                            placeholder="https://script.google.com/macros/s/.../exec"
-                            className="flex-1 text-xs font-mono border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                            placeholder="https://sibos-54bcc-default-rtdb.asia-southeast1.firebasedatabase.app/"
+                            className="flex-1 text-xs font-mono border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
                           />
                           <button
                             type="button"
@@ -5412,7 +5213,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                           </button>
                         </div>
                         <span className="text-[11px] text-slate-400 block">
-                          Terhubung ke database Google Apps Script (Deployment Active: <code>/exec</code>).
+                          Terhubung langsung ke Firebase Realtime Database: <code>{SIBOS_FIREBASE_DB_URL}</code>
                         </span>
                       </div>
 
@@ -5422,10 +5223,10 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                           type="button"
                           onClick={() => handlePushDataToCloud(false)}
                           disabled={cloudSyncStatus === "syncing"}
-                          className="p-3 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700 text-white rounded-xl shadow-sm transition flex items-center justify-center gap-2 font-bold text-xs cursor-pointer"
+                          className="p-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl shadow-sm transition flex items-center justify-center gap-2 font-bold text-xs cursor-pointer"
                         >
                           <span>⬆️</span>
-                          <span>Upload Semua Data ke Cloud Sekarang</span>
+                          <span>Simpan Semua Data ke Firebase Sekarang</span>
                         </button>
                         <button
                           type="button"
@@ -5434,14 +5235,14 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                           className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl shadow-xs transition flex items-center justify-center gap-2 font-bold text-xs cursor-pointer"
                         >
                           <span>⬇️</span>
-                          <span>Tarik / Pulihkan Data dari Cloud (HP/Browser Baru)</span>
+                          <span>Muat Ulang Data Terbaru dari Firebase</span>
                         </button>
                       </div>
 
                       <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-900 flex items-start gap-2">
-                        <span className="text-base leading-none">💡</span>
+                        <span className="text-base leading-none">🔥</span>
                         <span>
-                          <strong>Sinkronisasi Otomatis:</strong> Setiap kali Anda mengklik tombol <em>"Simpan Pengaturan Sekolah & Media"</em> di bawah, data sekolah, RKAS, transaksi perbulan, dan dokumen Anda akan otomatis diunggah dan diperbarui ke Google Cloud Spreadsheet.
+                          <strong>Sinkronisasi Otomatis 2 Arah (Komputer &amp; HP):</strong> Setiap perubahan data (RKAS, Rincian Perbulan, Transaksi Belanja Bank, Rekening Koran, dan Pengaturan) otomatis disimpan langsung ke Firebase Realtime Database dan langsung tampil di komputer maupun HP.
                         </span>
                       </div>
                     </div>
@@ -6219,96 +6020,49 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
             </div>
           )}
 
-          {/* MODAL PANDUAN PEMASANGAN GOOGLE APPS SCRIPT (CODE.GS) */}
+          {/* MODAL INFO SINKRONISASI FIREBASE REALTIME DATABASE */}
           {showCloudGuideModal && (
             <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-2xl shadow-2xl border border-slate-700/20 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="bg-gradient-to-r from-sky-900 to-indigo-950 p-5 text-white flex items-center justify-between sticky top-0 z-10">
+              <div className="bg-white rounded-2xl shadow-2xl border border-slate-700/20 max-w-xl w-full max-h-[90vh] overflow-y-auto">
+                <div className="bg-gradient-to-r from-amber-700 to-orange-900 p-5 text-white flex items-center justify-between sticky top-0 z-10">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-xl">
-                      📖
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-xl">
+                      🔥
                     </div>
                     <div>
-                      <h3 className="font-bold text-sm text-white">Panduan Lengkap Pemasangan Database Cloud</h3>
-                      <p className="text-[11px] text-sky-200">Google Apps Script & Google Spreadsheet</p>
+                      <h3 className="font-bold text-sm text-white">Informasi Sinkronisasi Firebase Realtime Database</h3>
+                      <p className="text-[11px] text-amber-200">Database Terpusat untuk Komputer, Laptop &amp; HP</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowCloudGuideModal(false)}
-                    className="text-slate-400 hover:text-white text-xl cursor-pointer"
+                    className="text-slate-200 hover:text-white text-xl cursor-pointer"
                   >
                     &times;
                   </button>
                 </div>
 
                 <div className="p-6 space-y-5 text-xs text-slate-700 leading-relaxed">
-                  <div className="bg-sky-50 border border-sky-200 rounded-xl p-4 space-y-1">
-                    <p className="font-bold text-sky-950 text-sm flex items-center gap-2">
-                      <span>☁️</span> Mengapa Memerlukan Google Apps Script?
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-1">
+                    <p className="font-bold text-amber-950 text-sm flex items-center gap-2">
+                      <span>🔥</span> Database Tunggal Berbasis Firebase Realtime
                     </p>
-                    <p className="text-sky-900">
-                      Google Apps Script bertindak sebagai jembatan/server gratis antara web SiBOS di komputer Anda dengan Google Spreadsheet. Dengan mengaktifkan ini, semua data RKAS, rekening koran, belanja, dan login akun sekolah akan tersimpan online dan langsung dapat dibuka di HP (smartphone) atau komputer lain.
+                    <p className="text-amber-900">
+                      Aplikasi SiBOS V1 kini menggunakan <strong>Firebase Realtime Database</strong> sebagai satu-satunya pusat penyimpanan data. Seluruh perubahan data di komputer atau di HP langsung tersimpan dan tersinkron secara otomatis tanpa perlu memindahkan file manual.
                     </p>
                   </div>
 
-                  <div className="space-y-4">
-                    <div className="flex gap-3">
-                      <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">
-                        1
-                      </div>
-                      <div className="space-y-1">
-                        <p className="font-bold text-slate-800">Buka Google Apps Script atau Google Spreadsheet</p>
-                        <p>
-                          Buka browser dan kunjungi <a href="https://script.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline font-semibold">script.google.com</a> lalu klik <strong>"New Project"</strong>. Atau Anda juga bisa membuat Google Sheets baru &gt; menu <strong>Extensions (Ekstensi)</strong> &gt; <strong>Apps Script</strong>.
-                        </p>
-                      </div>
+                  <div className="space-y-3">
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <p className="font-bold text-slate-800 mb-1">🔗 Endpoint Firebase Aktif:</p>
+                      <code className="text-[11px] text-amber-700 font-mono break-all">{SIBOS_FIREBASE_DB_URL}</code>
                     </div>
-
-                    <div className="flex gap-3">
-                      <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">
-                        2
-                      </div>
-                      <div className="space-y-1">
-                        <p className="font-bold text-slate-800">Salin & Tempel Kode dari File Code.gs</p>
-                        <p>
-                          Di editor Google Apps Script, hapus semua kode bawaan di file <code>Code.gs</code>. Buka file <strong>Code.gs</strong> yang ada di folder aplikasi SiBOS V1, salin seluruh kodenya (Ctrl+A lalu Ctrl+C), dan tempelkan (Ctrl+V) ke dalam editor Apps Script. Lalu tekan ikon <strong>Save (Ctrl+S)</strong>.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-3">
-                      <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">
-                        3
-                      </div>
-                      <div className="space-y-1">
-                        <p className="font-bold text-slate-800">Deploy sebagai Web App</p>
-                        <p>
-                          Klik tombol biru <strong>"Deploy"</strong> di pojok kanan atas editor &gt; pilih <strong>"New deployment"</strong>:
-                        </p>
-                        <ul className="list-disc pl-5 space-y-1 bg-slate-50 p-3 rounded-lg border border-slate-200 font-mono text-[11px]">
-                          <li>Pilih type: <strong>Web app</strong> (ikon roda gigi)</li>
-                          <li>Description: <strong>SiBOS V1 Cloud Database</strong></li>
-                          <li>Execute as: <strong>Me (email Anda)</strong></li>
-                          <li>Who has access: <strong>Anyone</strong> (Wajib pilih "Anyone" agar HP &amp; browser lain bisa mengakses)</li>
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-3">
-                      <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">
-                        4
-                      </div>
-                      <div className="space-y-1">
-                        <p className="font-bold text-slate-800">Berikan Otorisasi &amp; Salin URL Web App</p>
-                        <p>
-                          Klik <strong>"Deploy"</strong>. Jika muncul dialog perizinan: klik <em>"Authorize access"</em> &gt; pilih akun Google Anda &gt; klik <em>"Advanced"</em> &gt; klik <em>"Go to ... (unsafe)"</em> &gt; klik <em>"Allow"</em>.
-                        </p>
-                        <p className="text-emerald-700 font-semibold bg-emerald-50 p-2 rounded border border-emerald-200">
-                          Salin <strong>Web app URL</strong> yang berakhiran <code>/exec</code>, lalu tempelkan ke kolom URL di Pengaturan SiBOS!
-                        </p>
-                      </div>
-                    </div>
+                    <ul className="list-disc pl-5 space-y-1.5 text-slate-700">
+                      <li><strong>Akun &amp; Password Sekolah:</strong> Tersimpan di node <code>/accounts</code> pada Firebase, sehingga registrasi atau ubah password langsung berlaku di semua perangkat.</li>
+                      <li><strong>Data Ruang Kerja per NPSN:</strong> Tersimpan di node <code>/schools/&lt;NPSN&gt;/data</code> (mencakup Master RKAS, Rincian Perbulan, Belanja Bank SI, Rekening Koran, Logo, dan Kop Surat).</li>
+                      <li><strong>Sinkronisasi Realtime Otomatis:</strong> Setiap perubahan otomatis dikirim ke Firebase dan perangkat lain yang sedang membuka aplikasi akan memperbarui tampilan secara otomatis.</li>
+                    </ul>
                   </div>
 
                   <div className="flex justify-end pt-3 border-t border-slate-200">
@@ -6317,7 +6071,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                       onClick={() => setShowCloudGuideModal(false)}
                       className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
                     >
-                      Saya Mengerti, Tutup Panduan
+                      Tutup Informasi
                     </button>
                   </div>
                 </div>

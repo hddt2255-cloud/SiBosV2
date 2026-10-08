@@ -32,9 +32,6 @@ var SHEET_ACCOUNTS = "ACCOUNTS";
 var SHEET_DATA = "DATA_SEKOLAH";
 var SHEET_LOG = "SYNC_LOG";
 
-// FOLDER GOOGLE DRIVE UNTUK DATABASE JSON
-var DATABASE_FOLDER_ID = "1BtgGzZT_attz8ZZf4P67zMHfhiKyHfkw";
-
 /**
  * Mendapatkan Spreadsheet Database yang aktif.
  * Jika script berdiri sendiri (standalone), otomatis membuat atau mencari Spreadsheet SiBOS.
@@ -177,22 +174,6 @@ function doGet(e) {
         }
       }
 
-      // LOAD DARI FILE JSON DI GOOGLE DRIVE (JIKA ADA) SEBAGAI PRIORITAS
-      try {
-        var folder = DriveApp.getFolderById(DATABASE_FOLDER_ID);
-        var files = folder.getFilesByName(npsn + "_database.json");
-        if (files.hasNext()) {
-           var fileData = files.next().getBlob().getDataAsString();
-           var parsedDriveData = JSON.parse(fileData);
-           // Timpa data dari sheet dengan data dari Drive JSON (karena JSON menjadi master)
-           for (var k in parsedDriveData) {
-             schoolData[k] = parsedDriveData[k];
-           }
-        }
-      } catch (err) {
-        // Abaikan jika folder tidak ditemukan atau error baca JSON
-      }
-
       // Ambil juga profil akun dari sheet ACCOUNTS
       var sheetAcc = ss.getSheetByName(SHEET_ACCOUNTS);
       var accRows = sheetAcc.getDataRange().getValues();
@@ -310,55 +291,27 @@ function doPost(e) {
       var rows = sheetData.getDataRange().getValues();
       var nowStr = new Date().toISOString();
 
-      // Buat map indeks baris yang sudah ada: npsn + "_" + dataType -> rowIndex (0-based)
+      // Buat map indeks baris yang sudah ada: npsn + "_" + dataType -> rowIndex (1-based)
       var rowIndexMap = {};
       for (var i = 1; i < rows.length; i++) {
         var key = String(rows[i][0]).trim() + "_" + String(rows[i][1]).trim();
-        rowIndexMap[key] = i; // 0-based index di array rows
+        rowIndexMap[key] = i + 1; // 1-based row index di sheet
       }
 
-      var newRowsToAppend = [];
-      var hasUpdates = false;
-
-      // Update data di memory (jauh lebih cepat daripada update cell satu-satu)
+      // Simpan setiap item data
       for (var dataType in dataToSave) {
         var itemVal = dataToSave[dataType];
         var jsonStr = (typeof itemVal === "string") ? itemVal : JSON.stringify(itemVal);
         var mapKey = npsn + "_" + dataType;
 
-        if (rowIndexMap.hasOwnProperty(mapKey)) {
-          var targetIdx = rowIndexMap[mapKey];
-          rows[targetIdx][2] = jsonStr;
-          rows[targetIdx][3] = nowStr;
-          hasUpdates = true;
+        if (rowIndexMap[mapKey]) {
+          var targetRow = rowIndexMap[mapKey];
+          sheetData.getRange(targetRow, 3).setValue(jsonStr);
+          sheetData.getRange(targetRow, 4).setValue(nowStr);
         } else {
-          newRowsToAppend.push([npsn, dataType, jsonStr, nowStr]);
+          sheetData.appendRow([npsn, dataType, jsonStr, nowStr]);
+          rowIndexMap[mapKey] = sheetData.getLastRow();
         }
-      }
-
-      // Tulis ulang seluruh sheet data dalam SATU KALI proses (Batch write)
-      if (hasUpdates && rows.length > 0) {
-        sheetData.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
-      }
-      
-      // Tambahkan baris baru secara batch (Batch append)
-      if (newRowsToAppend.length > 0) {
-        sheetData.getRange(rows.length + 1, 1, newRowsToAppend.length, 4).setValues(newRowsToAppend);
-      }
-
-      // SIMPAN JUGA SEBAGAI FILE JSON KE GOOGLE DRIVE
-      try {
-        var folder = DriveApp.getFolderById(DATABASE_FOLDER_ID);
-        var fileName = npsn + "_database.json";
-        var fileContent = JSON.stringify(dataToSave);
-        var files = folder.getFilesByName(fileName);
-        if (files.hasNext()) {
-            files.next().setContent(fileContent);
-        } else {
-            folder.createFile(fileName, fileContent, MimeType.PLAIN_TEXT);
-        }
-      } catch (err) {
-        // Abaikan jika gagal simpan ke drive
       }
 
       // Catat log
@@ -385,49 +338,15 @@ function doPost(e) {
       }
 
       var nowStr = new Date().toISOString();
-      var activeNpsns = [];
       accounts.forEach(function(acc) {
-        var accNpsn = String(acc.npsn).trim();
-        activeNpsns.push(accNpsn);
         sheetAcc.appendRow([
-          accNpsn,
+          String(acc.npsn),
           String(acc.namaSekolah || ""),
           String(acc.kepalaSekolah || ""),
-          String(acc.password || accNpsn),
+          String(acc.password || acc.npsn),
           nowStr
         ]);
       });
-
-      // BERSIHKAN DATA SEKOLAH (ORPHANED DATA) DARI SHEET DATA_SEKOLAH
-      var sheetData = ss.getSheetByName(SHEET_DATA);
-      var dataRows = sheetData.getDataRange().getValues();
-      var rowsToDelete = [];
-      for (var k = dataRows.length - 1; k >= 1; k--) {
-         var rNpsn = String(dataRows[k][0]).trim();
-         if (rNpsn && activeNpsns.indexOf(rNpsn) === -1) {
-            rowsToDelete.push(k + 1); // 1-based index
-         }
-      }
-      rowsToDelete.forEach(function(rowIndex) {
-         sheetData.deleteRow(rowIndex);
-      });
-
-      // BERSIHKAN DATA JSON DARI GOOGLE DRIVE
-      try {
-         var folder = DriveApp.getFolderById(DATABASE_FOLDER_ID);
-         var files = folder.getFiles();
-         while(files.hasNext()) {
-             var file = files.next();
-             var fileName = file.getName();
-             var match = fileName.match(/^(\d+)_database\.json$/);
-             if (match) {
-                 var fileNpsn = match[1];
-                 if (activeNpsns.indexOf(fileNpsn) === -1) {
-                     file.setTrashed(true);
-                 }
-             }
-         }
-      } catch (err) {}
 
       return createJsonResponse({
         status: "success",
@@ -532,19 +451,15 @@ function doPost(e) {
         try {
           folder = DriveApp.getFolderById(folderId);
         } catch (e) {
-          folder = DriveApp.getFolderById(DATABASE_FOLDER_ID);
+          folder = DriveApp.getRootFolder();
         }
       } else {
-        try {
-          folder = DriveApp.getFolderById(DATABASE_FOLDER_ID);
-        } catch (e) {
-          // Buat folder khusus "SiBOS V1 Uploads" di Google Drive jika belum ada
-          var folders = DriveApp.getFoldersByName("SiBOS V1 Uploads");
-          if (folders.hasNext()) {
-            folder = folders.next();
-          } else {
-            folder = DriveApp.createFolder("SiBOS V1 Uploads");
-          }
+        // Buat folder khusus "SiBOS V1 Uploads" di Google Drive jika belum ada
+        var folders = DriveApp.getFoldersByName("SiBOS V1 Uploads");
+        if (folders.hasNext()) {
+          folder = folders.next();
+        } else {
+          folder = DriveApp.createFolder("SiBOS V1 Uploads");
         }
       }
 

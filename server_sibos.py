@@ -3,7 +3,7 @@ import socketserver
 import os
 import sys
 
-PORT = 8087
+PORT = 8002
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
 class DualStackServer(http.server.ThreadingHTTPServer):

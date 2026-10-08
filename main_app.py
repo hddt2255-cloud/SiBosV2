@@ -21,7 +21,6 @@ def get_base_dir():
 EXE_DIR = get_exe_dir()
 DATA_DIR = os.path.join(EXE_DIR, 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
-DB_FILE = os.path.join(DATA_DIR, 'sibos_db.json')
 
 def find_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -29,77 +28,20 @@ def find_free_port():
         return s.getsockname()[1]
 
 class Api:
-    def save_db(self, key, value):
-        try:
-            db = {}
-            if os.path.exists(DB_FILE):
-                try:
-                    with open(DB_FILE, 'r', encoding='utf-8') as f:
-                        db = json.load(f)
-                except Exception:
-                    db = {}
-            if value is None:
-                db.pop(key, None)
-            else:
-                db[key] = value
-            with open(DB_FILE, 'w', encoding='utf-8') as f:
-                json.dump(db, f, ensure_ascii=False, indent=2)
-            return True
-        except Exception as e:
-            print("save_db error:", e)
-            return False
-
-    def load_db(self):
-        if os.path.exists(DB_FILE):
-            try:
-                with open(DB_FILE, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {}
+    pass
 
 class SiBosHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
     def do_GET(self):
-        # Intercept index.html to inject saved data from sibos_db.json
+        # Serve index.html directly without local DB injection (100% Firebase Realtime DB)
         clean_path = self.path.split('?')[0]
         if clean_path in ('', '/', '/index.html'):
             index_path = os.path.join(get_base_dir(), 'index.html')
             if os.path.exists(index_path):
                 with open(index_path, 'r', encoding='utf-8') as f:
                     html = f.read()
-                
-                db_json_str = "{}"
-                if os.path.exists(DB_FILE):
-                    try:
-                        with open(DB_FILE, 'r', encoding='utf-8') as f:
-                            raw_data = f.read().strip()
-                            if raw_data:
-                                db_json_str = raw_data
-                    except Exception as e:
-                        print("Error reading DB_FILE:", e)
-
-                sync_script = f"""<script>
-(function() {{
-  try {{
-    var db = {db_json_str};
-    if (db && typeof db === 'object') {{
-      for (var k in db) {{
-        if (db[k] !== null && db[k] !== undefined) {{
-          var val = typeof db[k] === 'string' ? db[k] : JSON.stringify(db[k]);
-          localStorage.setItem(k, val);
-        }}
-      }}
-    }}
-  }} catch(e) {{ console.error("DB init sync error:", e); }}
-}})();
-</script>"""
-                if '<head>' in html:
-                    html = html.replace('<head>', '<head>\n' + sync_script, 1)
-                else:
-                    html = sync_script + html
 
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/html; charset=utf-8')
