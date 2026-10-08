@@ -462,24 +462,8 @@
       return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4 relative">
           
-          {/* TOMBOL CLOUD FIREBASE & GIR SUPER ADMIN DI KANAN ATAS */}
+          {/* TOMBOL GIR SUPER ADMIN DI KANAN ATAS */}
           <div className="fixed top-5 right-5 z-40 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setInputCloudUrl(appsScriptUrl || SIBOS_FIREBASE_DB_URL);
-                setCloudStatus({ type: "", text: "" });
-                setShowCloudConfigModal(true);
-              }}
-              title="Database Cloud Firebase Realtime (Sinkron Komputer & HP)"
-              className={`w-10 h-10 rounded-xl border backdrop-blur-md flex items-center justify-center transition shadow-xl hover:scale-110 cursor-pointer text-lg ${
-                appsScriptUrl 
-                  ? "bg-amber-950/90 hover:bg-amber-900 text-amber-400 border-amber-500/50 shadow-amber-900/30 ring-1 ring-amber-400/30" 
-                  : "bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-amber-300 border-slate-700/80"
-              }`}
-            >
-              🔥
-            </button>
             <button
               type="button"
               onClick={() => { setShowSuperAdminModal(true); setSaPassword(""); setSaError(""); }}
@@ -596,7 +580,7 @@
                     </label>
                     <input
                       type="text"
-                      placeholder="Contoh: SDIT ANNISA / SDN Sukamaju 01"
+                      placeholder="Masukkan Nama Sekolah..."
                       value={regNamaSekolah}
                       onChange={(e) => setRegNamaSekolah(e.target.value)}
                       className="w-full text-sm border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
@@ -610,7 +594,7 @@
                     </label>
                     <input
                       type="text"
-                      placeholder="Contoh: 20231556"
+                      placeholder="Masukkan NPSN Sekolah..."
                       value={regNpsn}
                       onChange={(e) => setRegNpsn(e.target.value)}
                       className="w-full text-sm border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
@@ -624,7 +608,7 @@
                     </label>
                     <input
                       type="text"
-                      placeholder="Contoh: Abdul Yakub, S.Ag"
+                      placeholder="Masukkan Nama Kepala Sekolah..."
                       value={regKepalaSekolah}
                       onChange={(e) => setRegKepalaSekolah(e.target.value)}
                       className="w-full text-sm border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
@@ -774,7 +758,13 @@
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {accounts.map((acc, idx) => {
+                        {accounts.length === 0 ? (
+                          <tr>
+                            <td colSpan="6" className="py-8 text-center text-slate-400 font-medium">
+                              Belum ada akun sekolah yang terdaftar. Silakan tambah sekolah atau lakukan registrasi.
+                            </td>
+                          </tr>
+                        ) : accounts.map((acc, idx) => {
                           const isShowPass = !!showPasswordMap[acc.npsn];
                           return (
                             <tr key={acc.npsn} className="hover:bg-slate-50/80 transition">
@@ -871,7 +861,7 @@
                             value={saSchoolForm.namaSekolah}
                             onChange={(e) => setSaSchoolForm({ ...saSchoolForm, namaSekolah: e.target.value })}
                             className="w-full text-xs font-semibold border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="Contoh: SDIT ANNISA"
+                            placeholder="Masukkan Nama Sekolah..."
                           />
                         </div>
 
@@ -883,7 +873,7 @@
                             value={saSchoolForm.npsn}
                             onChange={(e) => setSaSchoolForm({ ...saSchoolForm, npsn: e.target.value })}
                             className="w-full text-xs font-mono font-bold border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="20231556"
+                            placeholder="Masukkan NPSN..."
                           />
                         </div>
 
@@ -894,7 +884,7 @@
                             value={saSchoolForm.kepalaSekolah}
                             onChange={(e) => setSaSchoolForm({ ...saSchoolForm, kepalaSekolah: e.target.value })}
                             className="w-full text-xs font-semibold border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="Abdul Yakub, S.Ag"
+                            placeholder="Masukkan Nama Kepala Sekolah..."
                           />
                         </div>
 
@@ -934,118 +924,6 @@
             </div>
           )}
 
-          {/* MODAL PENGATURAN DATABASE CLOUD FIREBASE REALTIME */}
-          {showCloudConfigModal && (
-            <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-2xl shadow-2xl border border-slate-700/20 max-w-lg w-full overflow-hidden">
-                <div className="bg-gradient-to-r from-amber-700 to-orange-900 p-5 text-white flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-xl">
-                      🔥
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-sm text-white">Database Cloud Firebase Realtime</h3>
-                      <p className="text-[11px] text-amber-200">Sinkronisasi Realtime Otomatis di Komputer &amp; HP</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowCloudConfigModal(false)}
-                    className="text-slate-200 hover:text-white text-xl cursor-pointer"
-                  >
-                    &times;
-                  </button>
-                </div>
-
-                <div className="p-6 space-y-4">
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-900 space-y-1">
-                    <p className="font-bold flex items-center gap-1.5 text-amber-950">
-                      <span>🔥</span> Database Terpusat Hanya dari Firebase
-                    </p>
-                    <p className="leading-relaxed text-slate-700">
-                      Seluruh akun sekolah, RKAS, rincian perbulan, transaksi belanja SI, dan rekening koran kini tersimpan langsung di <strong>Firebase Realtime Database</strong> agar otomatis tersinkron di semua aplikasi baik di komputer maupun di HP.
-                    </p>
-                  </div>
-
-                  {cloudStatus.text && (
-                    <div className={`p-3 rounded-xl text-xs font-semibold border ${
-                      cloudStatus.type === "success" 
-                        ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
-                        : cloudStatus.type === "error" 
-                        ? "bg-red-50 border-red-200 text-red-800" 
-                        : "bg-blue-50 border-blue-200 text-blue-800"
-                    }`}>
-                      {cloudStatus.text}
-                    </div>
-                  )}
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-xs font-bold text-slate-700">
-                        URL Firebase Realtime Database:
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setInputCloudUrl(SIBOS_FIREBASE_DB_URL);
-                            if (onSaveAppsScriptUrl) onSaveAppsScriptUrl(SIBOS_FIREBASE_DB_URL);
-                          }}
-                          className="text-[11px] text-blue-600 hover:underline font-semibold cursor-pointer"
-                        >
-                          Gunakan Link Resmi
-                        </button>
-                        <span className="text-slate-300">|</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(inputCloudUrl || SIBOS_FIREBASE_DB_URL);
-                            alert("📋 Link Firebase Realtime Database berhasil disalin ke clipboard!");
-                          }}
-                          className="text-[11px] text-emerald-600 hover:underline font-semibold cursor-pointer"
-                        >
-                          📋 Salin
-                        </button>
-                      </div>
-                    </div>
-                    <input
-                      type="url"
-                      placeholder="https://sibos-54bcc-default-rtdb.asia-southeast1.firebasedatabase.app/"
-                      value={inputCloudUrl}
-                      onChange={(e) => setInputCloudUrl(e.target.value)}
-                      className="w-full text-xs font-mono border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-amber-500 outline-none transition"
-                    />
-                    <span className="text-[11px] text-slate-500 mt-1 block">
-                      Terhubung langsung ke Firebase Realtime Database (Asia Southeast 1).
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={handleTestAndSyncCloud}
-                      disabled={isTestingCloud}
-                      className="flex-1 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <span>{isTestingCloud ? "⏳" : "🧪"}</span>
-                      <span>{isTestingCloud ? "Menghubungi Firebase..." : "Uji & Sinkron Akun Firebase"}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (onSaveAppsScriptUrl) onSaveAppsScriptUrl(inputCloudUrl.trim() || SIBOS_FIREBASE_DB_URL);
-                        setShowCloudConfigModal(false);
-                      }}
-                      className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm transition cursor-pointer"
-                    >
-                      💾 Simpan &amp; Tutup
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
         </div>
       );
     }
@@ -1058,18 +936,20 @@
         setAppsScriptUrl(cleaned);
       };
 
-      const [accounts, setAccounts] = useState([
-        { npsn: "20231556", namaSekolah: "SDIT ANNISA", kepalaSekolah: "Abdul Yakub, S.Ag", password: "20231556" }
-      ]);
+      const [accounts, setAccounts] = useState([]);
 
       const saveAccountsToFirebase = useCallback(async (accsToSave, urlToUse) => {
         const baseUrl = normalizeFirebaseBaseUrl(urlToUse || appsScriptUrl);
         try {
-          await fetch(`${baseUrl}/accounts.json`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(accsToSave)
-          });
+          if (!accsToSave || accsToSave.length === 0) {
+            await fetch(`${baseUrl}/accounts.json`, { method: "DELETE" });
+          } else {
+            await fetch(`${baseUrl}/accounts.json`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(accsToSave)
+            });
+          }
           return true;
         } catch (err) {
           console.warn("Firebase save accounts error:", err);
@@ -1077,7 +957,7 @@
         }
       }, [appsScriptUrl]);
 
-      // Fungsi ambil data akun langsung dari Firebase Realtime Database
+      // Fungsi ambil data akun langsung dari Firebase Realtime Database (mulai dari 0 jika belum ada akun)
       const fetchAccountsFromCloud = useCallback(async (urlToUse) => {
         const baseUrl = normalizeFirebaseBaseUrl(urlToUse || appsScriptUrl);
         try {
@@ -1085,38 +965,12 @@
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const rawAccounts = await res.json();
           let list = normalizeArrayData(rawAccounts).filter(a => a && a.npsn);
-
-          // Jika belum ada di /accounts.json, cek /schools.json agar sekolah yang sudah ada di Firebase tetap terbaca
-          if (list.length === 0) {
-            const schoolsRes = await fetch(`${baseUrl}/schools.json`);
-            if (schoolsRes.ok) {
-              const schoolsObj = await schoolsRes.json();
-              if (schoolsObj && typeof schoolsObj === "object") {
-                Object.keys(schoolsObj).forEach(npsnKey => {
-                  const sEntry = schoolsObj[npsnKey];
-                  const hInfo = (sEntry && sEntry.data && sEntry.data.headerInfo) || (sEntry && sEntry.account) || {};
-                  list.push({
-                    npsn: String(hInfo.npsn || npsnKey),
-                    namaSekolah: String(hInfo.namaSekolah || `Sekolah ${npsnKey}`),
-                    kepalaSekolah: String(hInfo.kepalaSekolah || ""),
-                    password: String((sEntry && sEntry.account && sEntry.account.password) || npsnKey)
-                  });
-                });
-              }
-            }
-          }
-
-          if (list.length === 0) {
-            list = [{ npsn: "20231556", namaSekolah: "SDIT ANNISA", kepalaSekolah: "Abdul Yakub, S.Ag", password: "20231556" }];
-            await saveAccountsToFirebase(list, baseUrl);
-          } else {
-            setAccounts(list);
-          }
+          setAccounts(list);
           return { success: true, count: list.length, accounts: list };
         } catch (err) {
           return { success: false, message: err.message || "Gagal menghubungi Firebase Realtime Database" };
         }
-      }, [appsScriptUrl, saveAccountsToFirebase]);
+      }, [appsScriptUrl]);
 
       // Auto-fetch accounts dari Firebase saat startup, saat fokus jendela, dan berkala agar sinkron di semua perangkat
       useEffect(() => {
@@ -1317,14 +1171,14 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
       // State Surat Transfer (Surat Pemindahbukuan)
       const [selectedSuratTransferDate, setSelectedSuratTransferDate] = useState("Semua");
-      const [suratTransferCetakDate, setSuratTransferCetakDate] = useState("28 September 2026");
-      const [suratTransferNomor, setSuratTransferNomor] = useState("12/SI/SDITANNISA/IX/2026");
+      const [suratTransferCetakDate, setSuratTransferCetakDate] = useState("");
+      const [suratTransferNomor, setSuratTransferNomor] = useState("");
 
       // Rincian Kertas Kerja Perbulan State (murni dari Firebase)
       const [perBulanData, setPerBulanData] = useState(() => normalizePerBulanData({}));
 
       // Filter Tanggal Cetak Standing Instruction (SI)
-      const [selectedSiDate, setSelectedSiDate] = useState("06/03/2026");
+      const [selectedSiDate, setSelectedSiDate] = useState("Semua");
       const [selectedBelanjaTglSI, setSelectedBelanjaTglSI] = useState("Semua");
 
       // Header Informasi Sekolah State (murni dari Firebase)
@@ -1735,7 +1589,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupPayload, null, 2));
         const downloadAnchor = document.createElement('a');
         downloadAnchor.setAttribute("href", dataStr);
-        downloadAnchor.setAttribute("download", `Backup_Master_RKAS_ANNISA_${new Date().toISOString().slice(0,10)}.json`);
+        downloadAnchor.setAttribute("download", `Backup_Master_RKAS_${(headerInfo.namaSekolah || currentUser.namaSekolah || "Sekolah").replace(/\s+/g, "_")}_${new Date().toISOString().slice(0,10)}.json`);
         document.body.appendChild(downloadAnchor);
         downloadAnchor.click();
         downloadAnchor.remove();
@@ -2033,7 +1887,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         const worksheet = XLSX.utils.json_to_sheet(excelData);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Master RKAS");
-        XLSX.writeFile(workbook, `Master_RKAS_SDIT_ANNISA_${new Date().toISOString().slice(0,10)}.xlsx`);
+        XLSX.writeFile(workbook, `Master_RKAS_${(headerInfo.namaSekolah || currentUser.namaSekolah || "Sekolah").replace(/\s+/g, "_")}_${new Date().toISOString().slice(0,10)}.xlsx`);
         alert("✅ Ekspor Excel Database Master RKAS berhasil!");
       };
 
@@ -2151,7 +2005,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupPayload, null, 2));
         const downloadAnchor = document.createElement('a');
         downloadAnchor.setAttribute("href", dataStr);
-        downloadAnchor.setAttribute("download", `Backup_Database_Belanja_ANNISA_${new Date().toISOString().slice(0,10)}.json`);
+        downloadAnchor.setAttribute("download", `Backup_Database_Belanja_${(headerInfo.namaSekolah || currentUser.namaSekolah || "Sekolah").replace(/\s+/g, "_")}_${new Date().toISOString().slice(0,10)}.json`);
         document.body.appendChild(downloadAnchor);
         downloadAnchor.click();
         downloadAnchor.remove();
@@ -4614,7 +4468,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                           value={suratTransferCetakDate}
                           onChange={(e) => setSuratTransferCetakDate(e.target.value)}
                           className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800 w-48"
-                          placeholder="28 September 2026"
+                          placeholder="Ketik tanggal surat..."
                         />
                       </div>
 
@@ -4625,7 +4479,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                           value={suratTransferNomor}
                           onChange={(e) => setSuratTransferNomor(e.target.value)}
                           className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-slate-800 w-60"
-                          placeholder="12/SI/SDITANNISA/IX/2026"
+                          placeholder="Ketik nomor surat..."
                         />
                       </div>
                     </div>
@@ -4675,7 +4529,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                     <div className="text-xs space-y-0.5 mb-3">
                       <p>Kepada Yth,</p>
                       <p className="font-bold">{headerInfo.namaBank || ""}</p>
-                      <p>di Bekasi</p>
+                      <p>di {headerInfo.kabupaten || "Tempat"}</p>
                     </div>
 
                     {/* BODY OPENING */}
@@ -4686,13 +4540,13 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                     {/* SENDER ACCOUNT DETAILS */}
                     <div className="pl-4 text-xs space-y-0.5 mb-3">
                       <p className="flex"><span className="w-44 font-medium">Nomor Rekening</span><span>: {headerInfo.noRekening || ""}</span></p>
-                      <p className="flex"><span className="w-44 font-medium">Nama Rekening</span><span>: {headerInfo.namaSekolah || "SDI AN NISA"}</span></p>
-                      <p className="flex"><span className="w-44 font-medium">Unit Kerja</span><span>: {headerInfo.namaSekolah || "SDI AN NISA"}</span></p>
+                      <p className="flex"><span className="w-44 font-medium">Nama Rekening</span><span>: {headerInfo.namaSekolah || ""}</span></p>
+                      <p className="flex"><span className="w-44 font-medium">Unit Kerja</span><span>: {headerInfo.namaSekolah || ""}</span></p>
                       <p className="flex"><span className="w-44 font-medium">Alamat</span><span>: {headerInfo.alamat || ""}</span></p>
                       <p className="flex"><span className="w-44 font-medium">Nama Kepala Sekolah</span><span>: {headerInfo.kepalaSekolah || ""}</span></p>
                       <p className="flex"><span className="w-44 font-medium">Nama Bendahara</span><span>: {headerInfo.bendaharaSekolah || ""}</span></p>
-                      <p className="flex"><span className="w-44 font-medium">Nomor Hp</span><span>: {headerInfo.noHp || "08159925673"}</span></p>
-                      <p className="flex"><span className="w-44 font-medium">Email</span><span>: {headerInfo.email || "andipm301@gmail.com"}</span></p>
+                      <p className="flex"><span className="w-44 font-medium">Nomor Hp</span><span>: {headerInfo.noHp || ""}</span></p>
+                      <p className="flex"><span className="w-44 font-medium">Email</span><span>: {headerInfo.email || ""}</span></p>
                     </div>
 
                     {/* TRANSFER TARGET & TOTAL AMOUNT */}
@@ -4786,7 +4640,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             value={headerInfo.namaSekolah || ''}
                             onChange={(e) => setHeaderInfo({ ...headerInfo, namaSekolah: e.target.value })}
                             className="w-full text-xs font-bold border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                            placeholder="Contoh: SDIT ANNISA"
+                            placeholder="Masukkan Nama Sekolah..."
                           />
                         </div>
 
@@ -4798,7 +4652,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             value={headerInfo.npsn || ''}
                             onChange={(e) => setHeaderInfo({ ...headerInfo, npsn: e.target.value })}
                             className="w-full text-xs font-mono border border-slate-300 rounded-lg px-3 py-2"
-                            placeholder="20231556"
+                            placeholder="Masukkan NPSN..."
                           />
                         </div>
 
@@ -4810,7 +4664,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             value={headerInfo.alamat || ''}
                             onChange={(e) => setHeaderInfo({ ...headerInfo, alamat: e.target.value })}
                             className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                            placeholder="Jl Wibawa Mukti II No 05 RT.03 RW.06 Jatiasih"
+                            placeholder="Masukkan Alamat Lengkap Sekolah..."
                           />
                         </div>
 
@@ -4822,7 +4676,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                               value={headerInfo.kabupaten || ''}
                               onChange={(e) => setHeaderInfo({ ...headerInfo, kabupaten: e.target.value })}
                               className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                              placeholder="Kota Bekasi"
+                              placeholder="Kabupaten / Kota..."
                             />
                           </div>
                           <div>
@@ -4832,7 +4686,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                               value={headerInfo.provinsi || ''}
                               onChange={(e) => setHeaderInfo({ ...headerInfo, provinsi: e.target.value })}
                               className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                              placeholder="Prov. Jawa Barat"
+                              placeholder="Provinsi..."
                             />
                           </div>
                         </div>
@@ -4875,7 +4729,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             value={headerInfo.kepalaSekolah || ''}
                             onChange={(e) => setHeaderInfo({ ...headerInfo, kepalaSekolah: e.target.value })}
                             className="w-full text-xs font-bold border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
-                            placeholder="Abdul Yakub, S.Ag"
+                            placeholder="Masukkan Nama Kepala Sekolah..."
                           />
                           <p className="text-[11px] text-slate-500 mt-1">Tampil otomatis pada kolom Tanda Tangan Laporan & Surat Transfer.</p>
                         </div>
@@ -4888,7 +4742,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             value={headerInfo.bendaharaSekolah || ''}
                             onChange={(e) => setHeaderInfo({ ...headerInfo, bendaharaSekolah: e.target.value })}
                             className="w-full text-xs font-bold border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
-                            placeholder="Andi Purnomo"
+                            placeholder="Masukkan Nama Bendahara..."
                           />
                           <p className="text-[11px] text-slate-500 mt-1">Tampil otomatis pada kolom Tanda Tangan Bendahara.</p>
                         </div>
@@ -4900,7 +4754,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             value={headerInfo.noRekening || ''}
                             onChange={(e) => setHeaderInfo({ ...headerInfo, noRekening: e.target.value })}
                             className="w-full text-xs font-mono font-bold border border-slate-300 rounded-lg px-3 py-2"
-                            placeholder="0120510312100"
+                            placeholder="Masukkan Nomor Rekening..."
                           />
                         </div>
 
@@ -4911,7 +4765,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             value={headerInfo.namaBank || ''}
                             onChange={(e) => setHeaderInfo({ ...headerInfo, namaBank: e.target.value })}
                             className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                            placeholder="Bank BJB Kantor Cabang Jatiasih"
+                            placeholder="Masukkan Nama Bank..."
                           />
                         </div>
 
@@ -4923,7 +4777,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                               value={headerInfo.email || ''}
                               onChange={(e) => setHeaderInfo({ ...headerInfo, email: e.target.value })}
                               className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                              placeholder="andipm301@gmail.com"
+                              placeholder="Masukkan Email..."
                             />
                           </div>
                           <div>
@@ -4933,7 +4787,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                               value={headerInfo.noHp || ''}
                               onChange={(e) => setHeaderInfo({ ...headerInfo, noHp: e.target.value })}
                               className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                              placeholder="08159925673"
+                              placeholder="Masukkan No HP..."
                             />
                           </div>
                         </div>
@@ -5103,147 +4957,6 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         >
                           <span>🔒</span> Simpan Perubahan Password
                         </button>
-                      </div>
-                    </div>
-
-                    {/* CARD 6: DATABASE CLOUD FIREBASE REALTIME */}
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white flex items-center justify-center text-xl shadow-md shadow-amber-500/20">
-                            🔥
-                          </div>
-                          <div>
-                            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                              Database Cloud Firebase Realtime
-                              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
-                                cloudSyncStatus === "synced" 
-                                  ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
-                                  : cloudSyncStatus === "syncing"
-                                  ? "bg-amber-100 text-amber-700 border border-amber-300 animate-pulse"
-                                  : cloudSyncStatus === "error"
-                                  ? "bg-red-100 text-red-700 border border-red-300"
-                                  : "bg-amber-100 text-amber-700 border border-amber-300"
-                              }`}>
-                                {cloudSyncStatus === "synced" ? "● Terhubung & Sinkron" : (cloudSyncStatus === "syncing" ? "● Sedang Sinkron..." : (cloudSyncStatus === "error" ? "● Gagal Koneksi" : "● Firebase Aktif"))}
-                              </span>
-                            </h3>
-                            <p className="text-xs text-slate-500">
-                              Penyimpanan tunggal terpusat di Firebase Realtime Database agar seluruh data langsung tersinkron di semua aplikasi baik di komputer maupun di HP.
-                            </p>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => setShowCloudGuideModal(true)}
-                          className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <span>📖</span> Info Sinkronisasi Firebase
-                        </button>
-                      </div>
-
-                      {cloudStatusMsg && (
-                        <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between border ${
-                          cloudSyncStatus === "synced"
-                            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                            : cloudSyncStatus === "syncing"
-                            ? "bg-amber-50 border-amber-200 text-amber-800"
-                            : cloudSyncStatus === "error"
-                            ? "bg-red-50 border-red-200 text-red-800"
-                            : "bg-sky-50 border-sky-200 text-sky-800"
-                        }`}>
-                          <span className="flex items-center gap-1.5">
-                            <span>{cloudSyncStatus === "syncing" ? "⏳" : (cloudSyncStatus === "synced" ? "✅" : (cloudSyncStatus === "error" ? "⚠️" : "🔥"))}</span>
-                            <span>{cloudStatusMsg}</span>
-                          </span>
-                          {cloudLastSynced && (
-                            <span className="text-[11px] font-mono text-slate-500">
-                              Terakhir: {cloudLastSynced}
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <label className="block text-xs font-bold text-slate-700">
-                            URL Firebase Realtime Database:
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCloudUrlInput(SIBOS_FIREBASE_DB_URL);
-                                if (onSaveAppsScriptUrl) onSaveAppsScriptUrl(SIBOS_FIREBASE_DB_URL);
-                                alert("✅ Link Firebase Realtime Database default telah diatur!");
-                              }}
-                              className="text-[11px] text-blue-600 hover:underline font-semibold cursor-pointer"
-                            >
-                              Gunakan Link Resmi
-                            </button>
-                            <span className="text-slate-300">|</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(cloudUrlInput || SIBOS_FIREBASE_DB_URL);
-                                alert("📋 Link Firebase Realtime Database berhasil disalin ke clipboard!");
-                              }}
-                              className="text-[11px] text-emerald-600 hover:underline font-semibold cursor-pointer"
-                            >
-                              📋 Salin Link
-                            </button>
-                          </div>
-                        </div>
-                        <div className="flex flex-col sm:flex-row gap-2">
-                          <input
-                            type="url"
-                            value={cloudUrlInput}
-                            onChange={(e) => setCloudUrlInput(e.target.value)}
-                            placeholder="https://sibos-54bcc-default-rtdb.asia-southeast1.firebasedatabase.app/"
-                            className="flex-1 text-xs font-mono border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleTestCloudConnection}
-                            disabled={cloudSyncStatus === "syncing"}
-                            className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
-                          >
-                            <span>🧪</span> Tes Koneksi
-                          </button>
-                        </div>
-                        <span className="text-[11px] text-slate-400 block">
-                          Terhubung langsung ke Firebase Realtime Database: <code>{SIBOS_FIREBASE_DB_URL}</code>
-                        </span>
-                      </div>
-
-                      {/* TOMBOL AKSI SINKRONISASI MANUAL */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                        <button
-                          type="button"
-                          onClick={() => handlePushDataToCloud(false)}
-                          disabled={cloudSyncStatus === "syncing"}
-                          className="p-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl shadow-sm transition flex items-center justify-center gap-2 font-bold text-xs cursor-pointer"
-                        >
-                          <span>⬆️</span>
-                          <span>Simpan Semua Data ke Firebase Sekarang</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handlePullDataFromCloud(false)}
-                          disabled={cloudSyncStatus === "syncing"}
-                          className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl shadow-xs transition flex items-center justify-center gap-2 font-bold text-xs cursor-pointer"
-                        >
-                          <span>⬇️</span>
-                          <span>Muat Ulang Data Terbaru dari Firebase</span>
-                        </button>
-                      </div>
-
-                      <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-900 flex items-start gap-2">
-                        <span className="text-base leading-none">🔥</span>
-                        <span>
-                          <strong>Sinkronisasi Otomatis 2 Arah (Komputer &amp; HP):</strong> Setiap perubahan data (RKAS, Rincian Perbulan, Transaksi Belanja Bank, Rekening Koran, dan Pengaturan) otomatis disimpan langsung ke Firebase Realtime Database dan langsung tampil di komputer maupun HP.
-                        </span>
                       </div>
                     </div>
 
@@ -6016,65 +5729,6 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                     </button>
                   </div>
                 </form>
-              </div>
-            </div>
-          )}
-
-          {/* MODAL INFO SINKRONISASI FIREBASE REALTIME DATABASE */}
-          {showCloudGuideModal && (
-            <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-2xl shadow-2xl border border-slate-700/20 max-w-xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="bg-gradient-to-r from-amber-700 to-orange-900 p-5 text-white flex items-center justify-between sticky top-0 z-10">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-xl">
-                      🔥
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-sm text-white">Informasi Sinkronisasi Firebase Realtime Database</h3>
-                      <p className="text-[11px] text-amber-200">Database Terpusat untuk Komputer, Laptop &amp; HP</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowCloudGuideModal(false)}
-                    className="text-slate-200 hover:text-white text-xl cursor-pointer"
-                  >
-                    &times;
-                  </button>
-                </div>
-
-                <div className="p-6 space-y-5 text-xs text-slate-700 leading-relaxed">
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-1">
-                    <p className="font-bold text-amber-950 text-sm flex items-center gap-2">
-                      <span>🔥</span> Database Tunggal Berbasis Firebase Realtime
-                    </p>
-                    <p className="text-amber-900">
-                      Aplikasi SiBOS V1 kini menggunakan <strong>Firebase Realtime Database</strong> sebagai satu-satunya pusat penyimpanan data. Seluruh perubahan data di komputer atau di HP langsung tersimpan dan tersinkron secara otomatis tanpa perlu memindahkan file manual.
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <p className="font-bold text-slate-800 mb-1">🔗 Endpoint Firebase Aktif:</p>
-                      <code className="text-[11px] text-amber-700 font-mono break-all">{SIBOS_FIREBASE_DB_URL}</code>
-                    </div>
-                    <ul className="list-disc pl-5 space-y-1.5 text-slate-700">
-                      <li><strong>Akun &amp; Password Sekolah:</strong> Tersimpan di node <code>/accounts</code> pada Firebase, sehingga registrasi atau ubah password langsung berlaku di semua perangkat.</li>
-                      <li><strong>Data Ruang Kerja per NPSN:</strong> Tersimpan di node <code>/schools/&lt;NPSN&gt;/data</code> (mencakup Master RKAS, Rincian Perbulan, Belanja Bank SI, Rekening Koran, Logo, dan Kop Surat).</li>
-                      <li><strong>Sinkronisasi Realtime Otomatis:</strong> Setiap perubahan otomatis dikirim ke Firebase dan perangkat lain yang sedang membuka aplikasi akan memperbarui tampilan secara otomatis.</li>
-                    </ul>
-                  </div>
-
-                  <div className="flex justify-end pt-3 border-t border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setShowCloudGuideModal(false)}
-                      className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
-                    >
-                      Tutup Informasi
-                    </button>
-                  </div>
-                </div>
               </div>
             </div>
           )}
