@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SiBOS V1 - Aplikasi Pengelolaan Dana BOS & Belanja SI</title>
+  <title>SiBOS V2 - Aplikasi Pengelolaan Dana BOS & Belanja SI</title>
   <link rel="icon" type="image/png" href="sibos_icon.png">
   <link rel="apple-touch-icon" href="sibos_icon.png">
   <!-- Tailwind CSS CDN -->
@@ -225,7 +225,7 @@
       return 0;
     }
 
-    // URL RESMI DATABASE CLOUD FIREBASE REALTIME SIBOS V1
+    // URL RESMI DATABASE CLOUD FIREBASE REALTIME SiBOS V2
     const SIBOS_FIREBASE_DB_URL = "https://sibos-54bcc-default-rtdb.asia-southeast1.firebasedatabase.app/";
     const SIBOS_OFFICIAL_GAS_URL = SIBOS_FIREBASE_DB_URL;
 
@@ -1578,7 +1578,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
       // 1. Download Backup Data Master RKAS (Wajib)
       const handleBackupMasterData = () => {
         const backupPayload = {
-          appTitle: `SiBOS V1 - Backup Database Master RKAS - ${headerInfo.namaSekolah || "Sekolah"}`,
+          appTitle: `SiBOS V2 - Backup Database Master RKAS - ${headerInfo.namaSekolah || "Sekolah"}`,
           backupDate: new Date().toISOString(),
           headerInfo,
           masterRkas,
@@ -1996,7 +1996,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
       const handleBackupBelanjaData = () => {
         const backupPayload = {
-          appTitle: `SiBOS V1 - Backup Database Belanja Bank - ${headerInfo.namaSekolah || "Sekolah"}`,
+          appTitle: `SiBOS V2 - Backup Database Belanja Bank - ${headerInfo.namaSekolah || "Sekolah"}`,
           backupDate: new Date().toISOString(),
           headerInfo,
           belanjaBankList
@@ -3025,7 +3025,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
               <div className="flex items-center space-x-3">
                 <img src="sibos_icon.png" alt="SiBos" className="w-9 h-9 rounded-xl shadow object-contain border border-slate-700 bg-slate-900" />
                 <div>
-                  <h1 className="font-bold text-sm text-white tracking-wide">SiBOS V1</h1>
+                  <h1 className="font-bold text-sm text-white tracking-wide">SiBOS V2</h1>
                   <p className="text-[10px] text-blue-400 font-semibold truncate max-w-[150px]">{headerInfo.namaSekolah}</p>
                 </div>
               </div>
