@@ -1362,8 +1362,8 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           const payload = {
             updatedAt: nowIso,
             headerInfo: stateToPush.headerInfo || headerInfo,
-            masterRkas: stateToPush.masterRkas || [],
-            perBulanData: stateToPush.perBulanData || normalizePerBulanData({}),
+            masterRkas: normalizeMasterRkasData(stateToPush.masterRkas || []),
+            perBulanData: normalizePerBulanData(stateToPush.perBulanData || {}),
             belanjaBankList: stateToPush.belanjaBankList || [],
             danaMasukList: stateToPush.danaMasukList || [],
             saldoAwal: Number(stateToPush.saldoAwal ?? 0),
@@ -1405,7 +1405,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         setCloudSyncStatus("syncing");
         setCloudStatusMsg("Mengambil data dari Firebase...");
         try {
-          const res = await fetch(`${baseUrl}/schools/${encodeURIComponent(currentUser.npsn)}/data.json`);
+          const res = await fetch(`${baseUrl}/schools/${encodeURIComponent(currentUser.npsn)}/data.json`, { cache: "no-store" });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const d = await res.json();
 
@@ -2190,7 +2190,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
       const [inlineForm, setInlineForm] = useState({
         id: null,
         bulan: selectedMonthView,
+        masterNo: "",
         belanja: "",
+        subItems: [],
         noRek: "",
         namaBank: "",
         atasNama: "",
@@ -2204,7 +2206,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         setInlineForm({
           id: null,
           bulan: selectedMonthView,
+          masterNo: "",
           belanja: "",
+          subItems: [],
           noRek: "",
           namaBank: "",
           atasNama: "",
@@ -2229,7 +2233,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         const newItem = {
           id: inlineForm.id || Date.now(),
           bulan: selectedMonthView,
+          masterNo: inlineForm.masterNo || null,
           belanja: inlineForm.belanja,
+          subItems: Array.isArray(inlineForm.subItems) && inlineForm.subItems.length > 0 ? inlineForm.subItems : undefined,
           noRek: inlineForm.noRek || "-",
           namaBank: inlineForm.namaBank || "-",
           atasNama: inlineForm.atasNama || "-",
@@ -2254,6 +2260,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         bulan: "Maret",
         selectedMasterNo: "",
         belanja: "",
+        subItems: [],
         noRek: "",
         namaBank: "BJB",
         atasNama: "Siplah-Tokoladang",
@@ -2263,67 +2270,236 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         tglTransaksiSI: "06/03/2026",
       });
 
-      // Set Uraian / Item yang SUDAH DIBELANJAKAN untuk Highlight KUNING
+      // PEMETAAN HIRARKI MASTER RKAS:
+      // Menghubungkan setiap Sub-Kegiatan & Header Kode Rekening (misal: Belanja Alat/Bahan untuk Kegiatan Kantor-Perabot Kantor)
+      // dengan daftar barang rincian di bawahnya (001., 002., dst.)
+      const masterRkasHierarchy = useMemo(() => {
+        const childrenByParentNo = {};
+        const parentRekByChildNo = {};
+        const parentSubByRowNo = {};
+        let currentSub = null;
+        let currentRekHeader = null;
+
+        masterRkas.forEach((m) => {
+          const u = (m.uraian || "").trim();
+          const isNumberedChild = /^\d{3}\./.test(u);
+          if (m.level === "standar" || m.level === "kegiatan") {
+            currentSub = null;
+            currentRekHeader = null;
+            return;
+          }
+          if (m.level === "sub") {
+            currentSub = m;
+            currentRekHeader = null;
+            childrenByParentNo[m.no] = [];
+            return;
+          }
+          if (m.kodeRekening && !isNumberedChild) {
+            currentRekHeader = m;
+            childrenByParentNo[m.no] = [];
+            if (currentSub) parentSubByRowNo[m.no] = currentSub;
+            return;
+          }
+          if (isNumberedChild) {
+            if (currentRekHeader && (!m.kodeRekening || m.kodeRekening === currentRekHeader.kodeRekening)) {
+              childrenByParentNo[currentRekHeader.no].push(m);
+              parentRekByChildNo[m.no] = currentRekHeader;
+            }
+            if (currentSub) {
+              childrenByParentNo[currentSub.no].push(m);
+              parentSubByRowNo[m.no] = currentSub;
+            }
+          }
+        });
+
+        return { childrenByParentNo, parentRekByChildNo, parentSubByRowNo };
+      }, [masterRkas]);
+
+      // Fungsi Perhitungan Realisasi Terpakai & Sisa Anggaran Per Item Master RKAS
+      const computeMasterBudgetStatus = useCallback((excludeBelanjaId = null) => {
+        const { childrenByParentNo, parentRekByChildNo, parentSubByRowNo } = masterRkasHierarchy;
+        const childSpent = {};
+        const parentDirectSpent = {};
+        const lastNominal = {};
+
+        (belanjaBankList || []).forEach(b => {
+          if (excludeBelanjaId && b.id === excludeBelanjaId) return;
+          const bTotal = Number(b.total || 0);
+          if (bTotal <= 0) return;
+
+          // 1. Jika transaksi menyimpan rincian subItems yang dicentang
+          if (Array.isArray(b.subItems) && b.subItems.length > 0) {
+            b.subItems.forEach(sub => {
+              if (sub && sub.no) {
+                const subAmt = Number(sub.jumlah || 0);
+                childSpent[sub.no] = (childSpent[sub.no] || 0) + subAmt;
+                lastNominal[sub.no] = subAmt;
+              }
+            });
+            if (b.masterNo) {
+              lastNominal[b.masterNo] = bTotal;
+            }
+            return;
+          }
+
+          // 2. Cocokkan transaksi dengan baris di masterRkas
+          const bName = (b.belanja || "").trim().toLowerCase();
+          let target = null;
+          if (b.masterNo) {
+            target = masterRkas.find(m => String(m.no) === String(b.masterNo));
+          }
+          if (!target && bName) {
+            target = masterRkas.find(m => (m.uraian || "").trim().toLowerCase() === bName);
+          }
+          if (!target && bName.length >= 10) {
+            target = masterRkas.find(m => (m.uraian || "").trim().toLowerCase().startsWith(bName));
+          }
+
+          if (target) {
+            lastNominal[target.no] = bTotal;
+            const kids = childrenByParentNo[target.no] || [];
+            if (kids.length === 0) {
+              childSpent[target.no] = (childSpent[target.no] || 0) + bTotal;
+              const pRek = parentRekByChildNo[target.no];
+              if (pRek && (childrenByParentNo[pRek.no] || []).length === 1) {
+                lastNominal[pRek.no] = bTotal;
+              }
+            } else if (kids.length === 1) {
+              childSpent[kids[0].no] = (childSpent[kids[0].no] || 0) + bTotal;
+              lastNominal[kids[0].no] = bTotal;
+            } else {
+              parentDirectSpent[target.no] = (parentDirectSpent[target.no] || 0) + bTotal;
+            }
+          }
+        });
+
+        const statusByNo = {};
+
+        // Pass 1: Hitung status untuk semua baris rincian / leaf (yang tidak punya anak)
+        masterRkas.forEach(m => {
+          const kids = childrenByParentNo[m.no] || [];
+          if (kids.length > 0) return;
+
+          const pagu = Number(m.jumlah || 0);
+          let terpakai = childSpent[m.no] || 0;
+
+          const pRek = parentRekByChildNo[m.no];
+          const pSub = parentSubByRowNo[m.no];
+          if (pRek && ((parentDirectSpent[pRek.no] || 0) >= Number(pRek.jumlah || 0) || manualPurchasedMap[pRek.no])) {
+            terpakai = Math.max(terpakai, pagu);
+          }
+          if (pSub && ((parentDirectSpent[pSub.no] || 0) >= Number(pSub.jumlah || 0) || manualPurchasedMap[pSub.no])) {
+            terpakai = Math.max(terpakai, pagu);
+          }
+
+          const isManual = !!manualPurchasedMap[m.no];
+          const effectiveTerpakai = isManual ? Math.max(terpakai, pagu) : terpakai;
+          const sisa = isManual ? 0 : Math.max(0, pagu - terpakai);
+          const isFull = isManual || (pagu > 0 && sisa <= 0);
+
+          statusByNo[m.no] = {
+            pagu,
+            terpakai: effectiveTerpakai,
+            sisa,
+            isFull,
+            isPartial: !isFull && terpakai > 0,
+            lastNominal: lastNominal[m.no] || 0
+          };
+        });
+
+        // Pass 2: Hitung status untuk baris induk (Header Kode Rekening & Sub-Kegiatan)
+        masterRkas.forEach(m => {
+          const kids = childrenByParentNo[m.no] || [];
+          if (kids.length === 0) return;
+
+          const pagu = Number(m.jumlah || 0);
+          const kidsTerpakai = kids.reduce((sum, k) => sum + (statusByNo[k.no]?.terpakai || 0), 0);
+          let extraDirect = parentDirectSpent[m.no] || 0;
+          if (m.level === "sub") {
+            masterRkas.forEach(r => {
+              if (parentSubByRowNo[r.no]?.no === m.no && parentDirectSpent[r.no]) {
+                extraDirect += parentDirectSpent[r.no];
+              }
+            });
+          }
+
+          const rawTerpakai = Math.min(pagu, kidsTerpakai + extraDirect);
+          const isManual = !!manualPurchasedMap[m.no];
+          const allKidsFull = kids.length > 0 && kids.every(k => statusByNo[k.no]?.isFull);
+          const effectiveTerpakai = (isManual || allKidsFull) ? pagu : rawTerpakai;
+          const sisa = (isManual || allKidsFull) ? 0 : Math.max(0, pagu - rawTerpakai);
+          const isFull = isManual || allKidsFull || (pagu > 0 && sisa <= 0);
+
+          statusByNo[m.no] = {
+            pagu,
+            terpakai: effectiveTerpakai,
+            sisa,
+            isFull,
+            isPartial: !isFull && effectiveTerpakai > 0,
+            lastNominal: lastNominal[m.no] || 0
+          };
+        });
+
+        return statusByNo;
+      }, [masterRkas, masterRkasHierarchy, belanjaBankList, manualPurchasedMap]);
+
+      const masterBudgetFull = useMemo(() => computeMasterBudgetStatus(null), [computeMasterBudgetStatus]);
+      const activeEditingBelanjaId = inlineForm.id || (showBelanjaModal ? belanjaForm.id : null);
+      const masterBudgetForForm = useMemo(() => computeMasterBudgetStatus(activeEditingBelanjaId), [computeMasterBudgetStatus, activeEditingBelanjaId]);
+
+      // Set Uraian / Item yang SUDAH DIBELANJAKAN PENUH (100% Lunas) untuk Highlight KUNING
       const purchasedUraianSet = useMemo(() => {
         const set = new Set();
-        belanjaBankList.forEach(b => {
-          if (b.belanja) set.add(b.belanja.trim().toLowerCase());
-          if (b.masterNo) set.add(String(b.masterNo));
+        masterRkas.forEach(m => {
+          const st = masterBudgetFull[m.no];
+          if (st && st.isFull) {
+            set.add(String(m.no));
+          }
         });
         return set;
-      }, [belanjaBankList]);
+      }, [masterRkas, masterBudgetFull]);
 
       // OPSI DROPDOWN DATABASE BELANJA:
-      // 1. Hanya menampilkan item yang BELUM DIBELANJAKAN (baik otomatis bank maupun centang manual)
-      // 2. MAKSIMAL BULAN SEKARANG (Bulan yang akan datang TIDAK MUNCUL di dropdown list)
+      // Menampilkan semua item & sub-rekening yang MASIH MEMILIKI SISA ANGGARAN (sisa > 0)
       const availableMasterOptions = useMemo(() => {
-        const currentRealMonthIdx = new Date().getMonth(); // 0 = Jan, ..., 9 = Okt
-        
-        let maxAllowedMonthIdx = currentRealMonthIdx;
-        if (selectedMonthView !== "Semua") {
-          const selIdx = MONTHS.indexOf(selectedMonthView);
-          if (selIdx !== -1) {
-            maxAllowedMonthIdx = Math.min(selIdx, currentRealMonthIdx);
-          }
-        }
-
-        // Peta bulan jadwal pertama untuk setiap uraian dari Rincian Perbulan
-        const itemMonthMap = {};
-        MONTHS.forEach((mName, mIdx) => {
-          const list = perBulanData[mName] || [];
-          list.forEach(item => {
-            if (item.uraian && item.level === "item") {
-              const key = item.uraian.trim().toLowerCase();
-              if (itemMonthMap[key] === undefined) {
-                itemMonthMap[key] = mIdx;
-              }
-            }
+        const { childrenByParentNo, parentSubByRowNo } = masterRkasHierarchy;
+        return masterRkas
+          .filter(m => {
+            if (m.level === "standar" || m.level === "kegiatan") return false;
+            const st = masterBudgetForForm[m.no];
+            if (!st) return true;
+            if (st.isFull || st.sisa <= 0) return false;
+            return true;
+          })
+          .map(m => {
+            const st = masterBudgetForForm[m.no] || { pagu: Number(m.jumlah || 0), terpakai: 0, sisa: Number(m.jumlah || 0), isFull: false, isPartial: false, lastNominal: 0 };
+            const rawKids = childrenByParentNo[m.no] || [];
+            const enrichedKids = rawKids.map(k => {
+              const kSt = masterBudgetForForm[k.no] || { pagu: Number(k.jumlah || 0), terpakai: 0, sisa: Number(k.jumlah || 0), isFull: false, isPartial: false, lastNominal: 0 };
+              return {
+                ...k,
+                pagu: kSt.pagu,
+                terpakai: kSt.terpakai,
+                sisa: kSt.sisa,
+                isFull: kSt.isFull,
+                isPartial: kSt.isPartial,
+                lastNominal: kSt.lastNominal
+              };
+            });
+            const parentSub = parentSubByRowNo[m.no];
+            return {
+              ...m,
+              pagu: st.pagu,
+              terpakai: st.terpakai,
+              sisa: st.sisa,
+              isFull: st.isFull,
+              isPartial: st.isPartial,
+              lastNominal: st.lastNominal,
+              children: enrichedKids,
+              subKegiatanLabel: parentSub ? `${parentSub.kodeKegiatan} ${parentSub.uraian}` : (m.kodeKegiatan || "")
+            };
           });
-        });
-
-        return masterRkas.filter(m => {
-          if (m.level === "standar" || m.level === "kegiatan") return false;
-
-          const uraianKey = m.uraian.trim().toLowerCase();
-
-          // 1. Saring item yang SUDAH DIBELANJAKAN (Otomatis Bank atau Centang Manual)
-          const isPurchasedAuto = purchasedUraianSet.has(uraianKey) || 
-                                  purchasedUraianSet.has(String(m.no)) ||
-                                  belanjaBankList.some(b => b.belanja.trim().toLowerCase() === uraianKey || String(b.masterNo) === String(m.no));
-          const isPurchasedManual = !!manualPurchasedMap[m.no];
-          if (isPurchasedAuto || isPurchasedManual) {
-            return false; // HILANGKAN DARI DROPDOWN!
-          }
-
-          // 2. Saring item yang berada pada BULAN YANG AKAN DATANG (> maxAllowedMonthIdx)
-          const itemMonthIdx = itemMonthMap[uraianKey] !== undefined ? itemMonthMap[uraianKey] : 0;
-          if (itemMonthIdx > maxAllowedMonthIdx) {
-            return false; // HILANGKAN DARI DROPDOWN!
-          }
-
-          return true;
-        });
-      }, [masterRkas, perBulanData, purchasedUraianSet, manualPurchasedMap, belanjaBankList, selectedMonthView]);
+      }, [masterRkas, masterRkasHierarchy, masterBudgetForForm]);
 
       // ACUAN STATISTIK DATABASE BELANJA PERBULAN:
       // 1. Pagu Total Target (Bersumber dari Jumlah Total Master RKAS misal: Rp 246.840.000)
@@ -2443,6 +2619,79 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         return Array.from(set);
       }, [belanjaBankList]);
 
+      // Helper memilih item / sub-rekening RKAS pada Form Input Belanja Inline
+      const applyMasterOptionToInline = (opt) => {
+        if (!opt) return;
+        const kids = opt.children || [];
+        const availableKids = kids.filter(k => !k.isFull && k.sisa > 0);
+
+        if (kids.length > 1) {
+          // Jika sub-menu memiliki banyak barang (contoh: Belanja Alat/Bahan untuk Kegiatan Kantor-Perabot Kantor),
+          // tampilkan daftar barang agar bisa dicentang dan otomatis menjumlahkan harga ke Total
+          setInlineForm(prev => ({
+            ...prev,
+            masterNo: opt.no,
+            belanja: opt.uraian,
+            subItems: [],
+            total: ""
+          }));
+        } else if (kids.length === 1 && availableKids.length === 1) {
+          const onlyKid = availableKids[0];
+          setInlineForm(prev => ({
+            ...prev,
+            masterNo: opt.no,
+            belanja: opt.uraian,
+            subItems: [{ no: onlyKid.no, uraian: onlyKid.uraian, jumlah: onlyKid.sisa }],
+            total: onlyKid.sisa
+          }));
+        } else {
+          setInlineForm(prev => ({
+            ...prev,
+            masterNo: opt.no,
+            belanja: opt.uraian,
+            subItems: [],
+            total: opt.sisa || opt.jumlah || ""
+          }));
+        }
+      };
+
+      const handleToggleInlineSubItem = (childItem, checked) => {
+        setInlineForm(prev => {
+          const currentList = Array.isArray(prev.subItems) ? [...prev.subItems] : [];
+          let nextList;
+          if (checked) {
+            const exists = currentList.some(x => String(x.no) === String(childItem.no));
+            const defaultAmt = childItem.sisa > 0 ? childItem.sisa : Number(childItem.jumlah || 0);
+            nextList = exists
+              ? currentList
+              : [...currentList, { no: childItem.no, uraian: childItem.uraian, jumlah: defaultAmt }];
+          } else {
+            nextList = currentList.filter(x => String(x.no) !== String(childItem.no));
+          }
+          const sumTotal = nextList.reduce((acc, it) => acc + Number(it.jumlah || 0), 0);
+          return {
+            ...prev,
+            subItems: nextList,
+            total: sumTotal > 0 ? sumTotal : ""
+          };
+        });
+      };
+
+      const handleChangeInlineSubItemAmount = (childNo, newAmount) => {
+        setInlineForm(prev => {
+          const currentList = Array.isArray(prev.subItems) ? [...prev.subItems] : [];
+          const nextList = currentList.map(it =>
+            String(it.no) === String(childNo) ? { ...it, jumlah: Number(newAmount || 0) } : it
+          );
+          const sumTotal = nextList.reduce((acc, it) => acc + Number(it.jumlah || 0), 0);
+          return {
+            ...prev,
+            subItems: nextList,
+            total: sumTotal > 0 ? sumTotal : ""
+          };
+        });
+      };
+
       // Submit Belanja (Menyimpan Otomatis dengan Tanggal Input)
       const handleSubmitBelanja = (e) => {
         e.preventDefault();
@@ -2459,6 +2708,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           bulan: belanjaForm.bulan || selectedMonthView,
           masterNo: belanjaForm.selectedMasterNo || null,
           belanja: belanjaForm.belanja,
+          subItems: Array.isArray(belanjaForm.subItems) && belanjaForm.subItems.length > 0 ? belanjaForm.subItems : undefined,
           noRek: belanjaForm.noRek || "184500009453232",
           namaBank: belanjaForm.namaBank || "BJB",
           atasNama: belanjaForm.atasNama || "Siplah-Tokoladang",
@@ -3790,196 +4040,448 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                   </div>
                   
                   {/* FREEZER STANDALONE TABEL INPUT BELANJA */}
-                  <div className="no-print sticky top-[72px] z-30 bg-amber-50/95 backdrop-blur-md rounded-xl border-2 border-amber-500 p-3.5 shadow-xl transition-all">
-                    <div className="flex justify-between items-center mb-2 font-bold text-amber-950 text-xs">
-                      <span className="flex items-center gap-1.5 uppercase tracking-wide">
-                        <span>📌</span> TABEL FORM INPUT BELANJA BARU
-                        <span className="text-[10px] text-amber-900 font-normal normal-case bg-amber-200/90 px-2 py-0.5 rounded border border-amber-400 ml-2 shadow-xs">
-                          💡 Auto-Filter: {availableMasterOptions.length} Opsi Belum Dibelanjakan (s/d Bulan Ini)
-                        </span>
-                      </span>
-                      {inlineForm.id && (
-                        <span className="bg-amber-300 text-amber-900 text-[11px] px-2 py-0.5 rounded font-mono">
-                          Editing ID #{inlineForm.id}
-                        </span>
-                      )}
-                    </div>
+                  {(() => {
+                    const belanjaLower = (inlineForm.belanja || "").trim().toLowerCase();
+                    const matchingOptionsByName = belanjaLower
+                      ? availableMasterOptions.filter(m => m.uraian.trim().toLowerCase() === belanjaLower)
+                      : [];
+                    const activeMasterOpt = (inlineForm.masterNo && availableMasterOptions.find(m => String(m.no) === String(inlineForm.masterNo)))
+                      || (matchingOptionsByName.length > 0
+                        ? [...matchingOptionsByName].sort((a, b) => (b.children?.length || 0) - (a.children?.length || 0))[0]
+                        : null);
+                    const activeChildren = activeMasterOpt && Array.isArray(activeMasterOpt.children) ? activeMasterOpt.children : [];
+                    const availableActiveChildren = activeChildren.filter(c => !c.isFull && c.sisa > 0);
+                    const selectedSubNos = new Set((inlineForm.subItems || []).map(s => String(s.no)));
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs border-collapse border border-amber-400 bg-white rounded shadow-inner">
-                        <thead>
-                          <tr className="bg-amber-200 text-amber-950 font-bold text-center text-[11px]">
-                            <th className="border border-amber-400 px-2 py-2 text-left uppercase">BELANJA</th>
-                            <th className="border border-amber-400 px-2 py-2 w-36 font-mono uppercase">NOMOR REKENING</th>
-                            <th className="border border-amber-400 px-2 py-2 w-20 uppercase">NAMA BANK</th>
-                            <th className="border border-amber-400 px-2 py-2 text-left uppercase">ATAS NAMA</th>
-                            <th className="border border-amber-400 px-2 py-2 w-32 font-mono uppercase">NPWP</th>
-                            <th className="border border-amber-400 px-2 py-2 text-right w-28 uppercase">TOTAL (RP)</th>
-                            <th className="border border-amber-400 px-2 py-2 w-24 uppercase">SUMBER DANA</th>
-                            <th className="border border-amber-400 px-2 py-2 w-28 uppercase">TGL TRANSAKSI SI</th>
-                            <th className="border border-amber-400 px-2 py-2 w-24 uppercase">AKSI</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr className="bg-amber-50/80">
-                            <td className="border border-amber-300 p-1">
-                              <input
-                                type="text"
-                                placeholder="Ketik / Pilih Uraian Belanja..."
-                                value={inlineForm.belanja}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  const matched = masterRkas.find(m => m.uraian.trim().toLowerCase() === val.trim().toLowerCase());
-                                  if (matched && matched.jumlah) {
-                                    setInlineForm(prev => ({
-                                      ...prev,
-                                      belanja: val,
-                                      total: matched.jumlah
-                                    }));
-                                  } else {
-                                    setInlineForm(prev => ({ ...prev, belanja: val }));
-                                  }
-                                }}
-                                className="w-full text-xs font-semibold px-2 py-1.5 border border-amber-400 rounded focus:ring-2 focus:ring-blue-500 bg-white text-slate-900"
-                                list="rkas-suggestions-inline"
-                              />
-                              <datalist id="rkas-suggestions-inline">
-                                {availableMasterOptions.map(m => (
-                                  <option key={m.no} value={m.uraian}>{`[No.${m.no}] ${m.uraian} — Rp ${m.jumlah.toLocaleString('id-ID')}`}</option>
-                                ))}
-                              </datalist>
+                    return (
+                      <div className="no-print sticky top-[72px] z-30 bg-amber-50/95 backdrop-blur-md rounded-xl border-2 border-amber-500 p-3.5 shadow-xl transition-all">
+                        <div className="flex flex-wrap justify-between items-center mb-2 font-bold text-amber-950 text-xs gap-2">
+                          <span className="flex flex-wrap items-center gap-1.5 uppercase tracking-wide">
+                            <span>📌</span> TABEL FORM INPUT BELANJA BARU
+                            <span className="text-[10px] text-amber-900 font-normal normal-case bg-amber-200/90 px-2 py-0.5 rounded border border-amber-400 ml-1 shadow-xs">
+                              💡 Tersedia: {availableMasterOptions.length} Item / Sub-Menu (Termasuk yang Masih Memiliki Sisa Anggaran)
+                            </span>
+                          </span>
+                          {inlineForm.id && (
+                            <span className="bg-amber-300 text-amber-900 text-[11px] px-2 py-0.5 rounded font-mono">
+                              Editing ID #{inlineForm.id}
+                            </span>
+                          )}
+                        </div>
 
-                              {/* LENCANA TAMPILAN HARGA KETIKA ITEM DIPILIH */}
-                              {(() => {
-                                const matched = masterRkas.find(m => m.uraian.trim().toLowerCase() === (inlineForm.belanja || "").trim().toLowerCase());
-                                if (matched && matched.jumlah) {
-                                  return (
-                                    <div className="mt-1">
-                                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300 inline-flex items-center gap-1 shadow-sm">
-                                        <span>🏷️</span> Harga Target RKAS: Rp {matched.jumlah.toLocaleString('id-ID')}
-                                      </span>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs border-collapse border border-amber-400 bg-white rounded shadow-inner">
+                            <thead>
+                              <tr className="bg-amber-200 text-amber-950 font-bold text-center text-[11px]">
+                                <th className="border border-amber-400 px-2 py-2 text-left uppercase min-w-[260px]">BELANJA (PILIH ITEM / SUB-MENU RKAS)</th>
+                                <th className="border border-amber-400 px-2 py-2 w-36 font-mono uppercase">NOMOR REKENING</th>
+                                <th className="border border-amber-400 px-2 py-2 w-20 uppercase">NAMA BANK</th>
+                                <th className="border border-amber-400 px-2 py-2 text-left uppercase">ATAS NAMA</th>
+                                <th className="border border-amber-400 px-2 py-2 w-32 font-mono uppercase">NPWP</th>
+                                <th className="border border-amber-400 px-2 py-2 text-right w-28 uppercase">TOTAL (RP)</th>
+                                <th className="border border-amber-400 px-2 py-2 w-24 uppercase">SUMBER DANA</th>
+                                <th className="border border-amber-400 px-2 py-2 w-28 uppercase">TGL TRANSAKSI SI</th>
+                                <th className="border border-amber-400 px-2 py-2 w-24 uppercase">AKSI</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr className="bg-amber-50/80">
+                                <td className="border border-amber-300 p-1.5 align-top">
+                                  {/* DROPDOWN PEMILIH CEPAT DARI MASTER RKAS DENGAN SISA ANGGARAN & JUMLAH SUB-BARANG */}
+                                  <select
+                                    value={activeMasterOpt ? String(activeMasterOpt.no) : ""}
+                                    onChange={(e) => {
+                                      const chosenNo = e.target.value;
+                                      if (!chosenNo) {
+                                        setInlineForm(prev => ({ ...prev, masterNo: "", subItems: [] }));
+                                        return;
+                                      }
+                                      const chosenOpt = availableMasterOptions.find(m => String(m.no) === String(chosenNo));
+                                      if (chosenOpt) {
+                                        applyMasterOptionToInline(chosenOpt);
+                                      }
+                                    }}
+                                    className="w-full text-[11px] font-bold px-2 py-1 mb-1 border border-amber-400 rounded bg-amber-100/70 text-amber-950 focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                                    title="Pilih langsung dari daftar RKAS (menampilkan sisa anggaran & jumlah barang di sub-menu)"
+                                  >
+                                    <option value="">-- 📂 Pilih dari Dropdown RKAS (Menampilkan Sisa & Sub-Barang) --</option>
+                                    {availableMasterOptions.map(m => {
+                                      const availKidCount = (m.children || []).filter(c => !c.isFull && c.sisa > 0).length;
+                                      const groupTag = (m.children && m.children.length > 1)
+                                        ? ` [📦 ${availKidCount} Barang]`
+                                        : "";
+                                      const priceTag = m.terpakai > 0
+                                        ? `SISA: Rp ${m.sisa.toLocaleString('id-ID')} (Pagu: Rp ${m.pagu.toLocaleString('id-ID')})`
+                                        : `Rp ${m.sisa.toLocaleString('id-ID')}`;
+                                      return (
+                                        <option key={m.no} value={m.no}>
+                                          {`[No.${m.no}] ${m.uraian}${groupTag} — ${priceTag}`}
+                                        </option>
+                                      );
+                                    })}
+                                  </select>
+
+                                  <input
+                                    type="text"
+                                    placeholder="Atau ketik / cari uraian belanja di sini..."
+                                    value={inlineForm.belanja}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      // Cek apakah user memilih format "[No.X] Uraian" atau langsung "Uraian"
+                                      const noPrefixMatch = val.match(/^\[No\.(\d+)\]\s*(.+)$/i);
+                                      if (noPrefixMatch) {
+                                        const targetNo = noPrefixMatch[1];
+                                        const optByNo = availableMasterOptions.find(m => String(m.no) === String(targetNo));
+                                        if (optByNo) {
+                                          applyMasterOptionToInline(optByNo);
+                                          return;
+                                        }
+                                      }
+
+                                      const matches = availableMasterOptions.filter(m => m.uraian.trim().toLowerCase() === val.trim().toLowerCase());
+                                      if (matches.length > 0) {
+                                        const best = [...matches].sort((a, b) => (b.children?.length || 0) - (a.children?.length || 0))[0];
+                                        applyMasterOptionToInline(best);
+                                      } else {
+                                        setInlineForm(prev => ({ ...prev, masterNo: "", belanja: val, subItems: [] }));
+                                      }
+                                    }}
+                                    className="w-full text-xs font-semibold px-2 py-1.5 border border-amber-400 rounded focus:ring-2 focus:ring-blue-500 bg-white text-slate-900"
+                                    list="rkas-suggestions-inline"
+                                  />
+                                  <datalist id="rkas-suggestions-inline">
+                                    {availableMasterOptions.map(m => {
+                                      const availKidCount = (m.children || []).filter(c => !c.isFull && c.sisa > 0).length;
+                                      const groupTag = (m.children && m.children.length > 1) ? ` (📦 Pilih ${availKidCount} Barang)` : "";
+                                      const priceTag = m.terpakai > 0
+                                        ? `SISA: Rp ${m.sisa.toLocaleString('id-ID')} (Terpakai: Rp ${m.terpakai.toLocaleString('id-ID')} dari Rp ${m.pagu.toLocaleString('id-ID')})`
+                                        : `Rp ${m.sisa.toLocaleString('id-ID')}`;
+                                      const hasDuplicateName = availableMasterOptions.filter(x => x.uraian.trim().toLowerCase() === m.uraian.trim().toLowerCase()).length > 1;
+                                      const optionVal = hasDuplicateName ? `[No.${m.no}] ${m.uraian}` : m.uraian;
+                                      return (
+                                        <option key={m.no} value={optionVal}>
+                                          {`[No.${m.no}] ${m.uraian}${groupTag} — ${priceTag}`}
+                                        </option>
+                                      );
+                                    })}
+                                  </datalist>
+
+                                  {/* LENCANA TAMPILAN PAGU, TERPAKAI, & SISA ANGGARAN KETIKA ITEM DIPILIH */}
+                                  {activeMasterOpt ? (
+                                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                      {activeMasterOpt.terpakai > 0 ? (
+                                        <>
+                                          <span className="text-[10px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-400 inline-flex items-center gap-1 shadow-xs">
+                                            <span>⏳</span> Pagu: Rp {activeMasterOpt.pagu.toLocaleString('id-ID')} | Terpakai: Rp {activeMasterOpt.terpakai.toLocaleString('id-ID')}
+                                          </span>
+                                          <span className="text-[10px] font-extrabold text-emerald-900 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-400 inline-flex items-center gap-1 shadow-xs">
+                                            <span>💰</span> Sisa Anggaran: Rp {activeMasterOpt.sisa.toLocaleString('id-ID')}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300 inline-flex items-center gap-1 shadow-xs">
+                                          <span>🏷️</span> Anggaran RKAS: Rp {activeMasterOpt.sisa.toLocaleString('id-ID')}
+                                        </span>
+                                      )}
+
+                                      {/* Tombol Cepat Isi Nominal Bulan Sebelumnya (misal Rp 2.007.000 untuk Token Listrik) atau Sisa Penuh */}
+                                      {activeChildren.length <= 1 && activeMasterOpt.lastNominal > 0 && activeMasterOpt.lastNominal <= activeMasterOpt.sisa && Number(inlineForm.total) !== activeMasterOpt.lastNominal && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setInlineForm(prev => ({ ...prev, total: activeMasterOpt.lastNominal }))}
+                                          className="text-[10px] font-bold text-blue-800 bg-blue-100 hover:bg-blue-200 px-2 py-0.5 rounded border border-blue-300 transition cursor-pointer"
+                                          title="Gunakan nominal pembayaran bulan sebelumnya"
+                                        >
+                                          ⚡ Isi Rp {activeMasterOpt.lastNominal.toLocaleString('id-ID')} (Bulan Lalu)
+                                        </button>
+                                      )}
+                                      {activeChildren.length <= 1 && Number(inlineForm.total) !== activeMasterOpt.sisa && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setInlineForm(prev => ({ ...prev, total: activeMasterOpt.sisa }))}
+                                          className="text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300 transition cursor-pointer"
+                                        >
+                                          ⚡ Isi Sisa (Rp {activeMasterOpt.sisa.toLocaleString('id-ID')})
+                                        </button>
+                                      )}
                                     </div>
-                                  );
-                                } else if (inlineForm.total) {
-                                  return (
+                                  ) : inlineForm.total ? (
                                     <div className="mt-1">
                                       <span className="text-[10px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded border border-blue-300 inline-flex items-center gap-1 shadow-sm">
                                         <span>💰</span> Total Input: Rp {Number(inlineForm.total).toLocaleString('id-ID')}
                                       </span>
                                     </div>
-                                  );
-                                }
-                                return null;
-                              })()}
-                            </td>
-                            <td className="border border-amber-300 p-1">
-                              <input
-                                type="text"
-                                placeholder="Nomor Rekening..."
-                                value={inlineForm.noRek}
-                                onChange={(e) => setInlineForm({ ...inlineForm, noRek: e.target.value })}
-                                className="w-full text-xs font-mono px-1.5 py-1.5 border border-slate-300 rounded bg-white text-center"
-                              />
-                            </td>
-                            <td className="border border-amber-300 p-1">
-                              <input
-                                type="text"
-                                placeholder="Nama Bank..."
-                                value={inlineForm.namaBank}
-                                onChange={(e) => setInlineForm({ ...inlineForm, namaBank: e.target.value })}
-                                className="w-full text-xs font-bold px-1 py-1.5 border border-slate-300 rounded bg-white text-center"
-                              />
-                            </td>
-                            <td className="border border-amber-300 p-1">
-                              <input
-                                type="text"
-                                placeholder="Atas Nama Supplier..."
-                                value={inlineForm.atasNama}
-                                onChange={(e) => setInlineForm({ ...inlineForm, atasNama: e.target.value })}
-                                className="w-full text-xs px-1.5 py-1.5 border border-slate-300 rounded bg-white"
-                              />
-                            </td>
-                            <td className="border border-amber-300 p-1">
-                              <input
-                                type="text"
-                                placeholder="NPWP..."
-                                value={inlineForm.npwp}
-                                onChange={(e) => setInlineForm({ ...inlineForm, npwp: e.target.value })}
-                                className="w-full text-xs font-mono px-1 py-1.5 border border-slate-300 rounded bg-white text-center"
-                              />
-                            </td>
-                            <td className="border border-amber-300 p-1">
-                              <input
-                                type="text"
-                                placeholder="Total (Rp)"
-                                value={formatRupiah(inlineForm.total)}
-                                onChange={(e) => setInlineForm({ ...inlineForm, total: parseRupiah(e.target.value) })}
-                                className="w-full text-xs font-mono font-bold px-1.5 py-1.5 border border-amber-500 rounded bg-white text-right text-blue-900"
-                              />
-                            </td>
-                            <td className="border border-amber-300 p-1">
-                              <select
-                                value={inlineForm.sumberDana}
-                                onChange={(e) => setInlineForm({ ...inlineForm, sumberDana: e.target.value })}
-                                className="w-full text-xs font-semibold px-1 py-1.5 border border-slate-300 rounded bg-white text-center text-slate-800 cursor-pointer"
-                              >
-                                <option value="">-- Pilih Sumber Dana --</option>
-                                <option value="BOS REGULER">BOS REGULER</option>
-                                <option value="BOS KINERJA">BOS KINERJA</option>
-                                <option value="SILPA">SILPA</option>
-                                <option value="LAINNYA">LAINNYA</option>
-                              </select>
-                            </td>
-                            <td className="border border-amber-300 p-1">
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="text"
-                                  placeholder="28/09/2026"
-                                  value={inlineForm.tglTransaksiSI}
-                                  onChange={(e) => setInlineForm({ ...inlineForm, tglTransaksiSI: e.target.value })}
-                                  className="w-full text-xs font-mono font-bold px-1.5 py-1.5 border border-slate-300 rounded bg-white text-center text-slate-800"
-                                  title="Format Penanggalan Indonesia: DD/MM/YYYY (contoh: 28/09/2026)"
-                                />
-                                <input
-                                  type="date"
-                                  value={formatDateToIso(inlineForm.tglTransaksiSI)}
-                                  onChange={(e) => {
-                                    if (e.target.value) {
-                                      setInlineForm({ ...inlineForm, tglTransaksiSI: formatIsoToDdMmYyyy(e.target.value) });
-                                    }
-                                  }}
-                                  className="w-6 h-7 cursor-pointer accent-blue-600 border-none bg-transparent p-0"
-                                  title="Buka Kalender Pemilih Tanggal Indonesia"
-                                />
+                                  ) : null}
+                                </td>
+                                <td className="border border-amber-300 p-1 align-top">
+                                  <input
+                                    type="text"
+                                    placeholder="Nomor Rekening..."
+                                    value={inlineForm.noRek}
+                                    onChange={(e) => setInlineForm({ ...inlineForm, noRek: e.target.value })}
+                                    className="w-full text-xs font-mono px-1.5 py-1.5 border border-slate-300 rounded bg-white text-center"
+                                  />
+                                </td>
+                                <td className="border border-amber-300 p-1 align-top">
+                                  <input
+                                    type="text"
+                                    placeholder="Nama Bank..."
+                                    value={inlineForm.namaBank}
+                                    onChange={(e) => setInlineForm({ ...inlineForm, namaBank: e.target.value })}
+                                    className="w-full text-xs font-bold px-1 py-1.5 border border-slate-300 rounded bg-white text-center"
+                                  />
+                                </td>
+                                <td className="border border-amber-300 p-1 align-top">
+                                  <input
+                                    type="text"
+                                    placeholder="Atas Nama Supplier..."
+                                    value={inlineForm.atasNama}
+                                    onChange={(e) => setInlineForm({ ...inlineForm, atasNama: e.target.value })}
+                                    className="w-full text-xs px-1.5 py-1.5 border border-slate-300 rounded bg-white"
+                                  />
+                                </td>
+                                <td className="border border-amber-300 p-1 align-top">
+                                  <input
+                                    type="text"
+                                    placeholder="NPWP..."
+                                    value={inlineForm.npwp}
+                                    onChange={(e) => setInlineForm({ ...inlineForm, npwp: e.target.value })}
+                                    className="w-full text-xs font-mono px-1 py-1.5 border border-slate-300 rounded bg-white text-center"
+                                  />
+                                </td>
+                                <td className="border border-amber-300 p-1 align-top">
+                                  <input
+                                    type="text"
+                                    placeholder="Total (Rp)"
+                                    value={formatRupiah(inlineForm.total)}
+                                    onChange={(e) => setInlineForm({ ...inlineForm, total: parseRupiah(e.target.value) })}
+                                    className="w-full text-xs font-mono font-bold px-1.5 py-1.5 border border-amber-500 rounded bg-white text-right text-blue-900"
+                                  />
+                                </td>
+                                <td className="border border-amber-300 p-1 align-top">
+                                  <select
+                                    value={inlineForm.sumberDana}
+                                    onChange={(e) => setInlineForm({ ...inlineForm, sumberDana: e.target.value })}
+                                    className="w-full text-xs font-semibold px-1 py-1.5 border border-slate-300 rounded bg-white text-center text-slate-800 cursor-pointer"
+                                  >
+                                    <option value="">-- Pilih Sumber Dana --</option>
+                                    <option value="BOS REGULER">BOS REGULER</option>
+                                    <option value="BOS KINERJA">BOS KINERJA</option>
+                                    <option value="SILPA">SILPA</option>
+                                    <option value="LAINNYA">LAINNYA</option>
+                                  </select>
+                                </td>
+                                <td className="border border-amber-300 p-1 align-top">
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="text"
+                                      placeholder="28/09/2026"
+                                      value={inlineForm.tglTransaksiSI}
+                                      onChange={(e) => setInlineForm({ ...inlineForm, tglTransaksiSI: e.target.value })}
+                                      className="w-full text-xs font-mono font-bold px-1.5 py-1.5 border border-slate-300 rounded bg-white text-center text-slate-800"
+                                      title="Format Penanggalan Indonesia: DD/MM/YYYY (contoh: 28/09/2026)"
+                                    />
+                                    <input
+                                      type="date"
+                                      value={formatDateToIso(inlineForm.tglTransaksiSI)}
+                                      onChange={(e) => {
+                                        if (e.target.value) {
+                                          setInlineForm({ ...inlineForm, tglTransaksiSI: formatIsoToDdMmYyyy(e.target.value) });
+                                        }
+                                      }}
+                                      className="w-6 h-7 cursor-pointer accent-blue-600 border-none bg-transparent p-0"
+                                      title="Buka Kalender Pemilih Tanggal Indonesia"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="border border-amber-300 p-1 text-center align-top">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={handleSaveInline}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1.5 rounded shadow transition flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                                      title="Simpan ke Database Belanja"
+                                    >
+                                      💾 {inlineForm.id ? "Update" : "Simpan"}
+                                    </button>
+                                    {inlineForm.id && (
+                                      <button
+                                        type="button"
+                                        onClick={resetInlineForm}
+                                        className="bg-slate-400 hover:bg-slate-500 text-white font-bold text-[11px] px-2 py-1.5 rounded shadow transition cursor-pointer"
+                                        title="Batal Edit"
+                                      >
+                                        ❌
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* PANEL DAFTAR BARANG SUB-MENU (MUNCUL OTOMATIS SAAT MEMILIH REKENING / SUB-KEGIATAN YANG MEMILIKI DAFTAR BARANG) */}
+                        {activeMasterOpt && activeChildren.length > 0 && (
+                          <div className="mt-2.5 bg-white rounded-lg border-2 border-blue-400 p-3 shadow-md">
+                            <div className="flex flex-wrap justify-between items-center gap-2 pb-2 mb-2 border-b border-slate-200">
+                              <div>
+                                <div className="text-xs font-extrabold text-blue-950 flex flex-wrap items-center gap-1.5">
+                                  <span>📦</span> Pilih Daftar Barang pada Sub-Menu: <span className="text-blue-700 underline">{activeMasterOpt.uraian}</span>
+                                  <span className="text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded border border-blue-300">
+                                    No.{activeMasterOpt.no} {activeMasterOpt.kodeKegiatan ? `| ${activeMasterOpt.kodeKegiatan}` : ""}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-600 mt-0.5">
+                                  Centang barang yang dibelanjakan bulan/transaksi ini — harga otomatis dijumlahkan ke kolom <strong>TOTAL (RP)</strong>.
+                                </p>
                               </div>
-                            </td>
-                            <td className="border border-amber-300 p-1 text-center">
-                              <div className="flex items-center justify-center gap-1">
+
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {/* Jika ada beberapa kode kegiatan dengan nama rekening yang sama, tampilkan tombol pindah grup */}
+                                {matchingOptionsByName.length > 1 && matchingOptionsByName.map(grp => (
+                                  <button
+                                    key={grp.no}
+                                    type="button"
+                                    onClick={() => applyMasterOptionToInline(grp)}
+                                    className={`text-[10px] font-bold px-2 py-1 rounded border transition cursor-pointer ${
+                                      String(grp.no) === String(activeMasterOpt.no)
+                                        ? "bg-blue-600 text-white border-blue-700"
+                                        : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300"
+                                    }`}
+                                  >
+                                    📂 No.{grp.no} ({grp.kodeKegiatan || "Sub"} — {(grp.children || []).length} Barang)
+                                  </button>
+                                ))}
+
                                 <button
                                   type="button"
-                                  onClick={handleSaveInline}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1.5 rounded shadow transition flex items-center gap-1 whitespace-nowrap"
-                                  title="Simpan ke Database Belanja"
+                                  onClick={() => {
+                                    const allToSelect = availableActiveChildren.map(c => ({
+                                      no: c.no,
+                                      uraian: c.uraian,
+                                      jumlah: c.sisa
+                                    }));
+                                    const sumAll = allToSelect.reduce((acc, x) => acc + Number(x.jumlah || 0), 0);
+                                    setInlineForm(prev => ({
+                                      ...prev,
+                                      masterNo: activeMasterOpt.no,
+                                      subItems: allToSelect,
+                                      total: sumAll > 0 ? sumAll : ""
+                                    }));
+                                  }}
+                                  className="text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded shadow-xs transition cursor-pointer"
                                 >
-                                  💾 {inlineForm.id ? "Update" : "Simpan"}
+                                  ☑️ Pilih Semua ({availableActiveChildren.length} Barang)
                                 </button>
-                                {inlineForm.id && (
-                                  <button
-                                    type="button"
-                                    onClick={resetInlineForm}
-                                    className="bg-slate-400 hover:bg-slate-500 text-white font-bold text-[11px] px-2 py-1.5 rounded shadow transition"
-                                    title="Batal Edit"
-                                  >
-                                    ❌
-                                  </button>
-                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setInlineForm(prev => ({
+                                      ...prev,
+                                      subItems: [],
+                                      total: ""
+                                    }));
+                                  }}
+                                  className="text-[11px] font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 px-2.5 py-1 rounded transition cursor-pointer"
+                                >
+                                  🔲 Reset Centang
+                                </button>
                               </div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-1">
+                              {activeChildren.map(child => {
+                                const isChecked = selectedSubNos.has(String(child.no));
+                                const selectedObj = (inlineForm.subItems || []).find(s => String(s.no) === String(child.no));
+                                const isDisabled = child.isFull || child.sisa <= 0;
+
+                                return (
+                                  <div
+                                    key={child.no}
+                                    onClick={() => {
+                                      if (!isDisabled) {
+                                        handleToggleInlineSubItem(child, !isChecked);
+                                      }
+                                    }}
+                                    className={`p-2 rounded-lg border text-xs flex flex-col justify-between gap-1.5 transition ${
+                                      isDisabled
+                                        ? "bg-slate-100 border-slate-300 text-slate-400 opacity-75 cursor-not-allowed"
+                                        : isChecked
+                                          ? "bg-blue-50 border-blue-500 ring-1 ring-blue-400 text-slate-900 cursor-pointer shadow-xs"
+                                          : "bg-slate-50/70 hover:bg-amber-50/60 border-slate-200 text-slate-800 cursor-pointer"
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        disabled={isDisabled}
+                                        onChange={(e) => {
+                                          e.stopPropagation();
+                                          if (!isDisabled) {
+                                            handleToggleInlineSubItem(child, e.target.checked);
+                                          }
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="mt-0.5 w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <div className={`font-bold leading-snug ${isDisabled ? "line-through text-slate-400" : "text-slate-900"}`}>
+                                          {child.uraian}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-1 mt-0.5 text-[10px]">
+                                          <span className="font-mono text-slate-500">[No.{child.no}]</span>
+                                          {isDisabled ? (
+                                            <span className="bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded border border-emerald-300">
+                                              ✅ Sudah Dibeli (Rp {child.pagu.toLocaleString('id-ID')})
+                                            </span>
+                                          ) : child.terpakai > 0 ? (
+                                            <span className="bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded border border-amber-300">
+                                              Sisa: Rp {child.sisa.toLocaleString('id-ID')} (Pagu: Rp {child.pagu.toLocaleString('id-ID')})
+                                            </span>
+                                          ) : (
+                                            <span className="font-mono font-bold text-emerald-700">
+                                              Rp {child.sisa.toLocaleString('id-ID')}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {isChecked && !isDisabled && (
+                                      <div
+                                        className="flex items-center justify-between gap-2 pt-1 border-t border-blue-200 mt-0.5"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <span className="text-[10px] font-semibold text-blue-800">Nominal Belanja:</span>
+                                        <input
+                                          type="text"
+                                          value={formatRupiah(selectedObj ? selectedObj.jumlah : child.sisa)}
+                                          onChange={(e) => handleChangeInlineSubItemAmount(child.no, parseRupiah(e.target.value))}
+                                          className="w-28 text-[11px] font-mono font-bold px-1.5 py-0.5 border border-blue-400 rounded bg-white text-right text-blue-900"
+                                          title="Nominal untuk barang ini (otomatis menjumlahkan ke Total)"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <div className="mt-2 pt-2 border-t border-slate-200 flex flex-wrap justify-between items-center text-xs">
+                              <span className="font-semibold text-slate-700">
+                                Terpilih: <strong className="text-blue-700">{(inlineForm.subItems || []).length} Barang</strong> dari {availableActiveChildren.length} barang tersedia
+                              </span>
+                              <span className="font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded border border-emerald-300 font-mono">
+                                Total Otomatis: Rp {Number(inlineForm.total || 0).toLocaleString('id-ID')}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* SUMMARY CARDS BERBASIS ACUAN DATABASE RINCIAN BELANJA PERBULAN */}
                   <div className="no-print grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -4059,7 +4561,18 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                           filteredBelanja.map((item, idx) => (
                             <tr key={item.id} className="hover:bg-blue-50/50 transition border-b border-slate-300">
                               <td className="border border-slate-900 px-2 py-2.5 text-center font-bold">{idx + 1}</td>
-                              <td className="border border-slate-900 px-3 py-2.5 font-semibold text-slate-900">{item.belanja}</td>
+                              <td className="border border-slate-900 px-3 py-2.5 font-semibold text-slate-900">
+                                <div>{item.belanja}</div>
+                                {Array.isArray(item.subItems) && item.subItems.length > 0 && (
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {item.subItems.map(sub => (
+                                      <span key={sub.no} className="text-[10px] font-normal bg-blue-50 text-blue-900 border border-blue-200 px-1.5 py-0.5 rounded">
+                                        ✓ {sub.uraian} (Rp {Number(sub.jumlah || 0).toLocaleString('id-ID')})
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
                               <td className="border border-slate-900 px-2 py-2.5 text-center font-mono text-slate-800">{item.noRek}</td>
                               <td className="border border-slate-900 px-2 py-2.5 text-center font-bold text-slate-800">{item.namaBank}</td>
                               <td className="border border-slate-900 px-3 py-2.5 font-medium text-slate-800">{item.atasNama}</td>
@@ -4071,8 +4584,8 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                               <td className="border border-slate-900 px-2 py-2.5 text-center font-mono text-slate-700">{item.tglTransaksiSI}</td>
                               
                               <td className="border border-slate-900 px-2 py-2 text-center no-print space-x-1">
-                                <button onClick={() => setInlineForm(item)} className="text-blue-600 hover:text-blue-800 font-bold px-1" title="Edit Baris Ini">✏️</button>
-                                <button onClick={() => handleDeleteBelanja(item.id)} className="text-red-600 hover:text-red-800 font-bold px-1" title="Hapus">❌</button>
+                                <button onClick={() => setInlineForm({ ...item, masterNo: item.masterNo || "", subItems: item.subItems || [] })} className="text-blue-600 hover:text-blue-800 font-bold px-1 cursor-pointer" title="Edit Baris Ini">✏️</button>
+                                <button onClick={() => handleDeleteBelanja(item.id)} className="text-red-600 hover:text-red-800 font-bold px-1 cursor-pointer" title="Hapus">❌</button>
                               </td>
                             </tr>
                           ))
@@ -4453,9 +4966,11 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         </thead>
                         <tbody>
                           {masterRkas.map((m) => {
-                            const isPurchasedAuto = purchasedUraianSet.has(m.uraian.trim().toLowerCase()) || purchasedUraianSet.has(String(m.no));
+                            const st = masterBudgetFull[m.no];
+                            const isPurchasedAuto = st ? st.isFull : purchasedUraianSet.has(String(m.no));
                             const isPurchasedManual = !!manualPurchasedMap[m.no];
                             const isPurchased = isPurchasedAuto || isPurchasedManual;
+                            const isPartial = st ? st.isPartial : false;
                             const hasCheckbox = m.level !== "standar" && m.level !== "kegiatan";
                             const isRekeningHeader = m.kodeRekening && !m.uraian.match(/^\d{3}\./);
 
@@ -4470,7 +4985,14 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                                 <td className="border border-slate-900 px-2 py-2 text-center font-bold">{m.no}</td>
                                 <td className="border border-slate-900 px-2 py-2 font-mono text-slate-800 text-left">{m.kodeRekening || ""}</td>
                                 <td className="border border-slate-900 px-2 py-2 font-mono font-bold text-slate-900 text-left">{m.kodeKegiatan || ""}</td>
-                                <td className={`border border-slate-900 px-3 py-2 text-left ${m.level !== "item" ? "font-bold" : (isRekeningHeader ? "italic font-semibold" : "")}`}>{m.uraian}</td>
+                                <td className={`border border-slate-900 px-3 py-2 text-left ${m.level !== "item" ? "font-bold" : (isRekeningHeader ? "italic font-semibold" : "")}`}>
+                                  <div>{m.uraian}</div>
+                                  {isPartial && st && (
+                                    <div className="no-print mt-0.5 text-[10px] font-semibold text-amber-900 bg-amber-100/90 border border-amber-300 px-1.5 py-0.5 rounded inline-block">
+                                      ⏳ Terpakai: Rp {st.terpakai.toLocaleString('id-ID')} | Sisa: Rp {st.sisa.toLocaleString('id-ID')}
+                                    </div>
+                                  )}
+                                </td>
                                 <td className="border border-slate-900 px-3 py-2 text-right font-mono font-bold">{m.jumlah.toLocaleString('id-ID')}</td>
                                 <td className="border border-slate-900 px-3 py-2 text-right font-mono font-bold">{m.operasi.toLocaleString('id-ID')}</td>
                                 <td className="border border-slate-900 px-3 py-2 text-right font-mono font-bold">{m.modal.toLocaleString('id-ID')}</td>
@@ -4481,7 +5003,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                                       checked={isPurchasedManual || isPurchasedAuto}
                                       onChange={(e) => toggleManualPurchased(m, e.target.checked)}
                                       className="w-4 h-4 text-amber-600 bg-gray-100 border-gray-300 rounded focus:ring-amber-500 cursor-pointer accent-amber-600"
-                                      title={isPurchased ? "Sudah Dibelanjakan" : "Belum Dibelanjakan"}
+                                      title={isPurchased ? "Sudah Dibelanjakan Penuh" : isPartial ? `Terpakai Sebagian (Sisa: Rp ${st.sisa.toLocaleString('id-ID')})` : "Belum Dibelanjakan"}
                                     />
                                   )}
                                 </td>
@@ -5401,31 +5923,83 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                   {masterRkas.length > 0 && (
                     <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 mb-2">
                       <label className="block font-bold text-amber-900 mb-1">
-                        💡 Pilih Uraian Dari Database Master RKAS PDF ({availableMasterOptions.length} Item Belum Dibelanjakan s/d Bulan Ini):
+                        💡 Pilih Uraian Dari Database Master RKAS ({availableMasterOptions.length} Opsi Tersedia / Masih Memiliki Sisa Anggaran):
                       </label>
                       <select
                         value={belanjaForm.selectedMasterNo}
                         onChange={(e) => {
                           const mNo = e.target.value;
-                          const selected = masterRkas.find(x => String(x.no) === String(mNo));
+                          const selected = availableMasterOptions.find(x => String(x.no) === String(mNo));
                           if (selected) {
+                            const kids = selected.children || [];
                             setBelanjaForm(prev => ({
                               ...prev,
                               selectedMasterNo: selected.no,
                               belanja: selected.uraian,
-                              total: selected.jumlah || prev.total
+                              subItems: [],
+                              total: kids.length > 1 ? 0 : (selected.sisa || selected.jumlah || prev.total)
                             }));
                           }
                         }}
                         className="w-full text-xs border border-amber-300 rounded-lg px-2.5 py-1.5 bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
                       >
-                        <option value="">-- Pilih Uraian RKAS (Terfilter: Belum Dibelanjakan & Max Bulan Ini) --</option>
-                        {availableMasterOptions.map(m => (
-                          <option key={m.no} value={m.no}>
-                            [No.{m.no}] {m.uraian} (Jumlah: Rp {m.jumlah.toLocaleString('id-ID')})
-                          </option>
-                        ))}
+                        <option value="">-- Pilih Uraian RKAS (Menampilkan Sisa Anggaran & Sub-Menu) --</option>
+                        {availableMasterOptions.map(m => {
+                          const availKids = (m.children || []).filter(c => !c.isFull && c.sisa > 0).length;
+                          const groupTag = (m.children && m.children.length > 1) ? ` [📦 ${availKids} Barang]` : "";
+                          const priceTag = m.terpakai > 0
+                            ? `SISA: Rp ${m.sisa.toLocaleString('id-ID')} (Pagu: Rp ${m.pagu.toLocaleString('id-ID')})`
+                            : `Rp ${m.sisa.toLocaleString('id-ID')}`;
+                          return (
+                            <option key={m.no} value={m.no}>
+                              {`[No.${m.no}] ${m.uraian}${groupTag} — ${priceTag}`}
+                            </option>
+                          );
+                        })}
                       </select>
+
+                      {/* Sub-items checklist di dalam modal jika memilih rekening yang memiliki banyak barang */}
+                      {(() => {
+                        const selOpt = availableMasterOptions.find(x => String(x.no) === String(belanjaForm.selectedMasterNo));
+                        const kids = selOpt && Array.isArray(selOpt.children) ? selOpt.children : [];
+                        if (kids.length === 0) return null;
+                        const checkedNos = new Set((belanjaForm.subItems || []).map(s => String(s.no)));
+                        return (
+                          <div className="mt-2 pt-2 border-t border-amber-200 max-h-44 overflow-y-auto space-y-1">
+                            <div className="text-[11px] font-bold text-blue-900 mb-1">
+                              📦 Centang Daftar Barang ({(belanjaForm.subItems || []).length} dipilih):
+                            </div>
+                            {kids.map(ch => {
+                              const isChecked = checkedNos.has(String(ch.no));
+                              const isDis = ch.isFull || ch.sisa <= 0;
+                              return (
+                                <label key={ch.no} className={`flex items-center justify-between gap-2 p-1.5 rounded border text-[11px] ${isDis ? "bg-slate-100 text-slate-400 line-through" : isChecked ? "bg-blue-50 border-blue-400 font-bold" : "bg-white border-slate-200 cursor-pointer"}`}>
+                                  <span className="flex items-center gap-1.5">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      disabled={isDis}
+                                      onChange={(ev) => {
+                                        const checked = ev.target.checked;
+                                        setBelanjaForm(prev => {
+                                          const cur = Array.isArray(prev.subItems) ? [...prev.subItems] : [];
+                                          const next = checked
+                                            ? [...cur, { no: ch.no, uraian: ch.uraian, jumlah: ch.sisa }]
+                                            : cur.filter(x => String(x.no) !== String(ch.no));
+                                          const sum = next.reduce((a, b) => a + Number(b.jumlah || 0), 0);
+                                          return { ...prev, subItems: next, total: sum };
+                                        });
+                                      }}
+                                    />
+                                    <span>{ch.uraian}</span>
+                                  </span>
+                                  <span className="font-mono">{isDis ? "Sudah Dibeli" : `Rp ${ch.sisa.toLocaleString('id-ID')}`}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 
