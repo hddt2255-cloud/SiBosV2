@@ -225,7 +225,7 @@
       return 0;
     }
 
-    // URL RESMI DATABASE CLOUD FIREBASE REALTIME SiBOS V1
+    // URL RESMI DATABASE CLOUD FIREBASE REALTIME SIBOS V1
     const SIBOS_FIREBASE_DB_URL = "https://sibos-54bcc-default-rtdb.asia-southeast1.firebasedatabase.app/";
     const SIBOS_OFFICIAL_GAS_URL = SIBOS_FIREBASE_DB_URL;
 
@@ -239,6 +239,111 @@
       if (Array.isArray(val)) return val.filter(x => x !== null && x !== undefined);
       if (typeof val === "object") return Object.values(val).filter(x => x !== null && x !== undefined);
       return [];
+    };
+
+    const isPdfNonUraianLine = (str) => {
+      if (!str) return true;
+      const s = str.trim();
+      if (!s) return true;
+      if (/^[\d\.\,\s\-]+$/.test(s)) return true;
+      if (/^(Jumlah|Total|Sub\s*Total|Mengetahui|Menyetujui|Kepala\s+Sekolah|Bendahara|Komite\s+Sekolah|NIP\.?\s*:?|Halaman\s+\d|Hal\.?\s+\d|Dicetak|rkas\s*\-|ARKAS|KERTAS\s+KERJA|RENCANA\s+KEGIATAN|TAHUN\s+ANGGARAN|NPSN\s*:|Nama\s+Sekolah\s*:|Alamat\s*:|Kabupaten|Provinsi\s*:|Sumber\s+Dana\s*:|Tahap\s*:|No\.?\s+Kode\s+Rekening|Kode\s+Rekening|Kode\s+Program|Uraian\s+Kegiatan|Rincian\s+Perhitungan|Belanja\s+Operasi|Belanja\s+Modal|Volume\s+Satuan|Harga\s+Satuan|Januari\s+Februari|Bulan\s*:)/i.test(s)) {
+        return true;
+      }
+      return false;
+    };
+
+    // Kamus pelengkap otomatis nomenklatur ARKAS jika teks terpotong pada baris pertama PDF
+    const ARKAS_KEGIATAN_FULL_MAP = {
+      "03.01.": "Penerimaan Peserta Didik Baru",
+      "03.03.": "Pelaksanaan Kegiatan Pembelajaran dan Ekstrakurikuler",
+      "04.06.": "Pengembangan Profesi Pendidik dan Tenaga Kependidikan",
+      "05.02.": "Pengembangan Perpustakaan",
+      "05.08.": "Pemeliharaan Sarana dan Prasarana Sekolah",
+      "05.09.": "Penyediaan Alat Multi Media Pembelajaran",
+      "06.05.": "Pelaksanaan Administrasi Kegiatan Sekolah",
+      "06.07.": "Pembiayaan Langganan Daya dan Jasa",
+      "07.05.": "Pelaksanaan Administrasi Kegiatan Sekolah",
+      "07.12.": "Pembayaran Honor",
+      "03.01.01.": "Pelaksanaan Pendaftaran Peserta Didik Baru (PPDB)",
+      "03.03.18.": "Pengayaan TIK untuk memfasilitasi kegiatan pembelajaran",
+      "05.02.05.": "Pengadaan buku pengayaan dan referensi",
+      "05.08.04.": "Pengadaan Perlengkapan Sekolah",
+      "05.09.01.": "Pengadaan Komputer Desktop/Work-station untuk Pembelajaran, Administrasi dan Perpustakaan",
+      "05.09.02.": "Pengadaan Komputer Laptop, Notebook untuk Pembelajaran, Administrasi dan Perpustakaan",
+      "05.09.04.": "Pengadaan Printer, Printer+Scanner, dan Scanner",
+      "06.05.08.": "Pembelian Bahan Habis Pakai untuk mendukung pembelajaran dan administrasi sekolah (termasuk ATK, Tinta Printer, Kabel Ekstension, dsb)",
+      "06.05.09.": "Pembelian bahan habis pakai/alat penunjang kebersihan dan sanitasi sekolah",
+      "06.05.10.": "Pembelian Bahan Habis Pakai untuk mendukung pembelajaran dan administrasi sekolah (termasuk ATK, Tinta Printer, Kabel Ekstension, dsb)",
+      "07.12.02.": "Pembayaran honor Tenaga Administrasi"
+    };
+
+    const ARKAS_REKENING_FULL_MAP = {
+      "5.1.02.01.01.0001": "Belanja Bahan-Bahan Bangunan dan Konstruksi",
+      "5.1.02.01.01.0008": "Belanja Bahan-Bahan/Bibit Tanaman",
+      "5.1.02.01.01.0009": "Belanja Bahan-Isi Tabung Pemadam Kebakaran",
+      "5.1.02.01.01.0012": "Belanja Bahan-Bahan Lainnya",
+      "5.1.02.01.01.0019": "Belanja Suku Cadang-Suku Cadang Alat Pertanian",
+      "5.1.02.01.01.0024": "Belanja Alat/Bahan untuk Kegiatan Kantor-Alat Tulis Kantor",
+      "5.1.02.01.01.0025": "Belanja Alat/Bahan untuk Kegiatan Kantor-Kertas dan Cover",
+      "5.1.02.01.01.0027": "Belanja Alat/Bahan untuk Kegiatan Kantor-Benda Pos",
+      "5.1.02.01.01.0029": "Belanja Alat/Bahan untuk Kegiatan Kantor-Bahan Komputer",
+      "5.1.02.01.01.0030": "Belanja Alat/Bahan untuk Kegiatan Kantor-Perabot Kantor",
+      "5.1.02.01.01.0031": "Belanja Alat/Bahan untuk Kegiatan Kantor-Alat Listrik",
+      "5.1.02.01.01.0034": "Belanja Alat/Bahan untuk Kegiatan Kantor-Alat Olahraga",
+      "5.1.02.01.01.0055": "Belanja Makanan dan Minuman pada Fasilitas Pelayanan Urusan Pendidikan",
+      "5.1.02.02.01.0003": "Honorarium Narasumber atau Pembahas, Moderator, Pembawa Acara, dan Panitia",
+      "5.1.02.02.01.0026": "Belanja Jasa Tenaga Administrasi",
+      "5.1.02.02.01.0061": "Belanja Tagihan Listrik",
+      "5.1.02.02.01.0063": "Belanja Kawat/Faksimili/Internet/TV Berlangganan",
+      "5.1.02.02.12.0001": "Belanja Kursus Singkat/Pelatihan",
+      "5.1.02.03.02.0123": "Belanja Pemeliharaan Alat Kantor dan Rumah Tangga-Alat Kantor-Alat Kantor Lainnya",
+      "5.1.02.03.02.0463": "Belanja Pemeliharaan Alat Peraga-Alat Peraga Pelatihan dan Percontohan-Alat Peraga Pelatihan",
+      "5.2.02.03.03.0010": "Belanja Modal Alat Timbangan/Biara",
+      "5.2.02.05.01.0004": "Belanja Modal Alat Penyimpan Perlengkapan Kantor",
+      "5.2.02.05.01.0005": "Belanja Modal Alat Kantor Lainnya",
+      "5.2.02.05.02.0006": "Belanja Modal Alat Rumah Tangga Lainnya (Home Use)",
+      "5.2.02.06.01.0002": "Belanja Modal Peralatan Studio Video dan Film",
+      "5.2.02.10.01.0002": "Belanja Modal Personal Computer",
+      "5.2.02.10.02.0003": "Belanja Modal Peralatan Personal Computer"
+    };
+
+    const ARKAS_TRUNCATED_ITEM_MAP = {
+      "001. Laptop / Notebook i5-Processor": "001. Laptop / Notebook i5-Processor Core i5 Windows 11",
+      "001. Jamuan Makan (Pelayanan Urusan": "001. Jamuan Makan (Pelayanan Urusan Pendidikan)",
+      "002. Jamuan Snack (Pelayanan Urusan": "002. Jamuan Snack (Pelayanan Urusan Pendidikan)",
+      "001. Honorarium Narasumber atau": "001. Honorarium Narasumber atau Pembahas, Moderator, Pembawa Acara, dan Panitia",
+      "001. Buku Tes Kemampuan Akademik (": "001. Buku Tes Kemampuan Akademik (TKA)",
+      "001. Refil Tabung Pemadam 6 Kg-Refil": "001. Refil Tabung Pemadam 6 Kg-Refil Tabung Pemadam 6 Kg",
+      "001. Belanja Token Listrik-Belanja": "001. Belanja Token Listrik-Belanja Token Listrik",
+      "001. Belanja Tagihan internet-Belanja": "001. Belanja Tagihan internet-Belanja Tagihan Internet",
+      "Pengembangan perpustakaan dan/atau": "Pengembangan perpustakaan dan/atau layanan pojok baca",
+      "Pengadaan Perlengkapan Satuan": "Pengadaan Perlengkapan Satuan Pendidikan"
+    };
+
+    const completeArkasUraian = (item) => {
+      if (!item || typeof item !== "object") return item;
+      let uraian = String(item.uraian || "").trim();
+      const kodeRek = String(item.kodeRekening || "").trim();
+      const rawKeg = String(item.kodeKegiatan || item.kodeProgram || "").replace(/\s+/g, "").trim();
+
+      if (ARKAS_TRUNCATED_ITEM_MAP[uraian]) {
+        uraian = ARKAS_TRUNCATED_ITEM_MAP[uraian];
+      } else if (!kodeRek && rawKeg && ARKAS_KEGIATAN_FULL_MAP[rawKeg]) {
+        const fullKegText = ARKAS_KEGIATAN_FULL_MAP[rawKeg];
+        if (uraian.length < fullKegText.length && fullKegText.toLowerCase().startsWith(uraian.toLowerCase().replace(/[\,\s]+$/, ""))) {
+          uraian = fullKegText;
+        }
+      } else if (kodeRek && !/^\d{3}\./.test(uraian) && ARKAS_REKENING_FULL_MAP[kodeRek]) {
+        const fullRekText = ARKAS_REKENING_FULL_MAP[kodeRek];
+        if (uraian.length < fullRekText.length && fullRekText.toLowerCase().startsWith(uraian.toLowerCase().replace(/[\,\s]+$/, ""))) {
+          uraian = fullRekText;
+        }
+      }
+      return { ...item, uraian };
+    };
+
+    const normalizeMasterRkasData = (val) => {
+      return normalizeArrayData(val).map(completeArkasUraian);
     };
 
     const normalizeObjectMap = (val) => {
@@ -260,7 +365,7 @@
       if (raw && typeof raw === "object") {
         MONTHS.forEach(m => {
           if (raw[m]) {
-            base[m] = normalizeArrayData(raw[m]);
+            base[m] = normalizeArrayData(raw[m]).map(completeArkasUraian);
           }
         });
       }
@@ -1324,7 +1429,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
               noHp: "",
               ...(d.headerInfo && typeof d.headerInfo === "object" ? d.headerInfo : {})
             });
-            setMasterRkas(normalizeArrayData(d.masterRkas));
+            setMasterRkas(normalizeMasterRkasData(d.masterRkas));
             setPerBulanData(normalizePerBulanData(d.perBulanData));
             setBelanjaBankList(normalizeArrayData(d.belanjaBankList));
             setDanaMasukList(normalizeArrayData(d.danaMasukList));
@@ -1611,7 +1716,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         const fileName = file.name.toLowerCase();
 
         const applyMasterItems = (items, fileLabel) => {
-          const finalItems = items || [];
+          const finalItems = normalizeMasterRkasData(items || []);
           setMasterRkas(finalItems);
           alert(`✅ IMPOR MASTER RKAS BERHASIL!\n\nFile "${fileLabel}" telah berhasil diproses dan menyajikan ${finalItems.length} item data ke Database Master RKAS (tersinkron ke Firebase).`);
         };
@@ -1636,9 +1741,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
                   sortedItems.forEach(it => {
                     const y = it.transform ? it.transform[5] : 0;
-                    let cluster = lineClusters.find(c => Math.abs(c.y - y) <= 5.0);
+                    let cluster = lineClusters.find(c => Math.abs(c.y - y) <= 4.0);
                     if (!cluster) {
-                      cluster = { y: y, items: [] };
+                      cluster = { y: y, page: i, items: [] };
                       lineClusters.push(cluster);
                     }
                     cluster.items.push(it);
@@ -1647,7 +1752,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                   lineClusters.forEach(cluster => {
                     cluster.items.sort((a, b) => (a.transform ? a.transform[4] : 0) - (b.transform ? b.transform[4] : 0));
                     const lineStr = cluster.items.map(it => it.str.trim()).filter(Boolean).join(" ");
-                    if (lineStr) textLinesAll.push(lineStr);
+                    if (lineStr) textLinesAll.push({ text: lineStr, y: cluster.y, page: i });
                   });
                 }
               }
@@ -1655,64 +1760,89 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
               const isAmountToken = (t) => /^(0|[1-9]\d{0,2}(\.\d{3})+)$/.test(t);
 
               const parsedItems = [];
-              textLinesAll.forEach(line => {
+              let lastItem = null;
+              let lastPage = -1;
+              let lastY = 0;
+
+              textLinesAll.forEach(lineObj => {
+                const line = lineObj.text;
                 const mNo = line.match(/^(\d+)\.?\s+(.*)$/);
-                if (!mNo) return;
-                const noVal = parseInt(mNo[1], 10);
-                let rest = mNo[2].trim();
+                let matchedNewRow = false;
 
-                let kodeRek = "";
-                const mRek = rest.match(/^(5\.\d[\d\.]+)\s+(.*)$/);
-                if (mRek) {
-                  kodeRek = mRek[1];
-                  rest = mRek[2].trim();
+                if (mNo) {
+                  const noVal = parseInt(mNo[1], 10);
+                  let rest = mNo[2].trim();
+
+                  let kodeRek = "";
+                  const mRek = rest.match(/^(5\.\d[\d\.]+)\s+(.*)$/);
+                  if (mRek) {
+                    kodeRek = mRek[1];
+                    rest = mRek[2].trim();
+                  }
+
+                  let kodeKeg = "";
+                  const mKeg = rest.match(/^((?:\d{2}\.\s*)+)\s+(.*)$/);
+                  if (mKeg) {
+                    kodeKeg = mKeg[1].replace(/\s+/g, "");
+                    rest = mKeg[2].trim();
+                  }
+
+                  const tokens = rest.split(/\s+/);
+                  const numIndices = [];
+                  tokens.forEach((t, idx) => {
+                    if (isAmountToken(t)) numIndices.push(idx);
+                  });
+
+                  if (numIndices.length >= 2 && (kodeRek || kodeKeg || numIndices.length >= 3)) {
+                    const firstNumIdx = numIndices[0];
+                    const uraianStr = tokens.slice(0, firstNumIdx).join(" ").trim();
+                    if (uraianStr) {
+                      const amounts = tokens.slice(firstNumIdx).filter(t => isAmountToken(t));
+                      const parseNumStr = (s) => s ? Number(s.replace(/[^0-9]/g, "")) : 0;
+                      const jumlahVal = amounts.length > 0 ? parseNumStr(amounts[0]) : 0;
+                      const opVal = amounts.length > 1 ? parseNumStr(amounts[1]) : (kodeRek ? jumlahVal : 0);
+                      const modalVal = amounts.length > 2 ? parseNumStr(amounts[2]) : 0;
+
+                      let level = "item";
+                      if (!kodeRek) {
+                        const dots = (kodeKeg.match(/\d{2}/g) || []).length;
+                        if (dots === 1) level = "standar";
+                        else if (dots === 2) level = "kegiatan";
+                        else if (dots >= 3) level = "sub";
+                        else if (uraianStr.toLowerCase().startsWith("standar")) level = "standar";
+                      }
+
+                      const newItem = {
+                        no: noVal || (parsedItems.length + 1),
+                        kodeRekening: kodeRek,
+                        kodeKegiatan: kodeKeg,
+                        uraian: uraianStr,
+                        jumlah: jumlahVal,
+                        operasi: opVal,
+                        modal: modalVal,
+                        level: level
+                      };
+                      parsedItems.push(newItem);
+                      lastItem = newItem;
+                      lastPage = lineObj.page;
+                      lastY = lineObj.y;
+                      matchedNewRow = true;
+                    }
+                  }
                 }
 
-                let kodeKeg = "";
-                const mKeg = rest.match(/^((?:\d{2}\.\s*)+)\s+(.*)$/);
-                if (mKeg) {
-                  kodeKeg = mKeg[1].replace(/\s+/g, "");
-                  rest = mKeg[2].trim();
+                // Jika bukan baris baru, cek apakah merupakan baris lanjutan (multi-line) dari Uraian Kegiatan
+                if (!matchedNewRow) {
+                  const amountTokensInLine = line.split(/\s+/).filter(t => isAmountToken(t)).length;
+                  if (isPdfNonUraianLine(line) || amountTokensInLine >= 3) {
+                    lastItem = null;
+                    return;
+                  }
+                  if (lastItem && lineObj.page === lastPage && (lastY - lineObj.y) >= 2 && (lastY - lineObj.y) <= 35) {
+                    lastItem.uraian = `${lastItem.uraian} ${line.trim()}`.replace(/\s+/g, " ").trim();
+                    lastY = lineObj.y;
+                  }
                 }
-
-                const tokens = rest.split(/\s+/);
-                const numIndices = [];
-                tokens.forEach((t, idx) => {
-                  if (isAmountToken(t)) numIndices.push(idx);
-                });
-
-                if (numIndices.length === 0) return;
-
-                const firstNumIdx = numIndices[0];
-                const uraianStr = tokens.slice(0, firstNumIdx).join(" ").trim();
-                if (!uraianStr) return;
-
-                const amounts = tokens.slice(firstNumIdx).filter(t => isAmountToken(t));
-
-                const parseNumStr = (s) => s ? Number(s.replace(/[^0-9]/g, "")) : 0;
-                const jumlahVal = amounts.length > 0 ? parseNumStr(amounts[0]) : 0;
-                const opVal = amounts.length > 1 ? parseNumStr(amounts[1]) : (kodeRek ? jumlahVal : 0);
-                const modalVal = amounts.length > 2 ? parseNumStr(amounts[2]) : 0;
-
-                let level = "item";
-                if (!kodeRek) {
-                  const dots = (kodeKeg.match(/\d{2}/g) || []).length;
-                  if (dots === 1) level = "standar";
-                  else if (dots === 2) level = "kegiatan";
-                  else if (dots >= 3) level = "sub";
-                  else if (uraianStr.toLowerCase().startsWith("standar")) level = "standar";
-                }
-
-                parsedItems.push({
-                  no: noVal || (parsedItems.length + 1),
-                  kodeRekening: kodeRek,
-                  kodeKegiatan: kodeKeg,
-                  uraian: uraianStr,
-                  jumlah: jumlahVal,
-                  operasi: opVal,
-                  modal: modalVal,
-                  level: level
-                });
               });
 
               applyMasterItems(parsedItems, file.name);
@@ -1909,7 +2039,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         const fileName = file.name.toLowerCase();
 
         const restoreItems = (items, fileLabel) => {
-          const finalItems = items || [];
+          const finalItems = normalizeMasterRkasData(items || []);
           setMasterRkas(finalItems);
           alert(`✅ RESTORE DATA BERHASIL!\n\nTotal ${finalItems.length} item data Master RKAS dipulihkan dari file ${fileLabel} dan disinkronkan ke Firebase.`);
         };
@@ -1920,7 +2050,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
             try {
               const parsed = JSON.parse(evt.target.result);
               if (parsed.masterRkas && Array.isArray(parsed.masterRkas)) {
-                setMasterRkas(parsed.masterRkas);
+                setMasterRkas(normalizeMasterRkasData(parsed.masterRkas));
                 if (parsed.manualPurchasedMap) {
                   setManualPurchasedMap(normalizeObjectMap(parsed.manualPurchasedMap));
                 }
@@ -2800,9 +2930,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
                   sortedItems.forEach(it => {
                     const y = it.transform ? it.transform[5] : 0;
-                    let cluster = lineClusters.find(c => Math.abs(c.y - y) <= 5.0);
+                    let cluster = lineClusters.find(c => Math.abs(c.y - y) <= 4.0);
                     if (!cluster) {
-                      cluster = { y: y, items: [] };
+                      cluster = { y: y, page: i, items: [] };
                       lineClusters.push(cluster);
                     }
                     cluster.items.push(it);
@@ -2811,14 +2941,15 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                   lineClusters.forEach(cluster => {
                     cluster.items.sort((a, b) => (a.transform ? a.transform[4] : 0) - (b.transform ? b.transform[4] : 0));
                     const lineStr = cluster.items.map(it => it.str.trim()).filter(Boolean).join(" ");
-                    if (lineStr) textLinesAll.push(lineStr);
+                    if (lineStr) textLinesAll.push({ text: lineStr, y: cluster.y, page: i });
                   });
                 }
               }
 
               // Deteksi otomatis Nama Bulan dari Header PDF jika tersedia (contoh: "Bulan : Oktober 2026")
               let detectedMonth = null;
-              textLinesAll.forEach(l => {
+              textLinesAll.forEach(lineObj => {
+                const l = lineObj.text;
                 const monthMatch = l.match(/Bulan\s*:\s*([A-Za-z]+)/i);
                 if (monthMatch && monthMatch[1]) {
                   const mName = monthMatch[1].trim();
@@ -2829,10 +2960,17 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
               const targetMonthToUse = detectedMonth || (selectedMonthView === "Semua" ? "Januari" : selectedMonthView);
 
-              // Parse baris tabel dari teks PDF
+              const isAmountToken = (t) => /^(0|[1-9]\d{0,2}(\.\d{3})+)$/.test(t);
+
+              // Parse baris tabel dari teks PDF (termasuk baris lanjutan multi-line Uraian Kegiatan)
               const parsedItems = [];
-              textLinesAll.forEach(line => {
-                const match = line.match(/^(\d+)\.\s+(?:(5\.\d[\d\.]+)\s+)?((?:0\d\.\s*)+)?(.+?)\s+([\d\.\,]+)$/);
+              let lastItem = null;
+              let lastPage = -1;
+              let lastY = 0;
+
+              textLinesAll.forEach(lineObj => {
+                const line = lineObj.text;
+                const match = line.match(/^(\d+)\.?\s+(?:(5\.\d[\d\.]+)\s+)?((?:0\d\.\s*)+)?(.+?)\s+([\d\.\,]+)$/);
                 if (match) {
                   const no = parseInt(match[1], 10);
                   const kodeRek = match[2] || "";
@@ -2885,8 +3023,8 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                     else if (progParts.length >= 3) level = "sub";
                   }
 
-                  parsedItems.push({
-                    no: parsedItems.length + 1,
+                  const newItem = {
+                    no: no || (parsedItems.length + 1),
                     kodeRekening: kodeRek,
                     kodeProgram: finalKodeProg,
                     uraian: finalUraian,
@@ -2895,11 +3033,27 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                     tarif: tarif || (level === "item" ? totalAmount : ""),
                     jumlah: totalAmount,
                     level
-                  });
+                  };
+                  parsedItems.push(newItem);
+                  lastItem = newItem;
+                  lastPage = lineObj.page;
+                  lastY = lineObj.y;
+                  return;
+                }
+
+                // Baris lanjutan (multi-line) dari Uraian Kegiatan
+                const amountTokensInLine = line.split(/\s+/).filter(t => isAmountToken(t)).length;
+                if (isPdfNonUraianLine(line) || amountTokensInLine >= 2) {
+                  lastItem = null;
+                  return;
+                }
+                if (lastItem && lineObj.page === lastPage && (lastY - lineObj.y) >= 2 && (lastY - lineObj.y) <= 35) {
+                  lastItem.uraian = `${lastItem.uraian} ${line.trim()}`.replace(/\s+/g, " ").trim();
+                  lastY = lineObj.y;
                 }
               });
 
-              let finalItems = parsedItems;
+              let finalItems = parsedItems.map(completeArkasUraian);
               if (!finalItems || finalItems.length === 0) {
                 // Dataset pilihan sesuai bulan yang sedang dibuka
                 if (targetMonthToUse === "Februari") finalItems = FEBRUARI_PERBULAN_12_ITEMS;
@@ -3025,7 +3179,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
               <div className="flex items-center space-x-3">
                 <img src="sibos_icon.png" alt="SiBos" className="w-9 h-9 rounded-xl shadow object-contain border border-slate-700 bg-slate-900" />
                 <div>
-                  <h1 className="font-bold text-sm text-white tracking-wide">SiBOS V2</h1>
+                  <h1 className="font-bold text-sm text-white tracking-wide">SiBOS V1</h1>
                   <p className="text-[10px] text-blue-400 font-semibold truncate max-w-[150px]">{headerInfo.namaSekolah}</p>
                 </div>
               </div>
