@@ -258,6 +258,7 @@
       "03.03.": "Pelaksanaan Kegiatan Pembelajaran dan Ekstrakurikuler",
       "04.06.": "Pengembangan Profesi Pendidik dan Tenaga Kependidikan",
       "05.02.": "Pengembangan Perpustakaan",
+      "05.05.": "Pelaksanaan Administrasi Kegiatan Sekolah",
       "05.08.": "Pemeliharaan Sarana dan Prasarana Sekolah",
       "05.09.": "Penyediaan Alat Multi Media Pembelajaran",
       "06.05.": "Pelaksanaan Administrasi Kegiatan Sekolah",
@@ -266,14 +267,18 @@
       "07.12.": "Pembayaran Honor",
       "03.01.01.": "Pelaksanaan Pendaftaran Peserta Didik Baru (PPDB)",
       "03.03.18.": "Pengayaan TIK untuk memfasilitasi kegiatan pembelajaran",
+      "04.06.01.": "Pelaksanaan kegiatan komunitas belajar di satuan pendidikan",
       "05.02.05.": "Pengadaan buku pengayaan dan referensi",
-      "05.08.04.": "Pengadaan Perlengkapan Sekolah",
+      "05.08.04.": "Pengadaan Perlengkapan Sekolah diluar komponen penyediaan alat multimedia pembelajaran",
       "05.09.01.": "Pengadaan Komputer Desktop/Work-station untuk Pembelajaran, Administrasi dan Perpustakaan",
       "05.09.02.": "Pengadaan Komputer Laptop, Notebook untuk Pembelajaran, Administrasi dan Perpustakaan",
       "05.09.04.": "Pengadaan Printer, Printer+Scanner, dan Scanner",
       "06.05.08.": "Pembelian Bahan Habis Pakai untuk mendukung pembelajaran dan administrasi sekolah (termasuk ATK, Tinta Printer, Kabel Ekstension, dsb)",
       "06.05.09.": "Pembelian bahan habis pakai/alat penunjang kebersihan dan sanitasi sekolah",
       "06.05.10.": "Pembelian Bahan Habis Pakai untuk mendukung pembelajaran dan administrasi sekolah (termasuk ATK, Tinta Printer, Kabel Ekstension, dsb)",
+      "06.07.01.": "Pembayaran daya listrik",
+      "06.07.05.": "Pembayaran jasa internet",
+      "07.05.01.": "Bea materai, administrasi bank",
       "07.12.02.": "Pembayaran honor Tenaga Administrasi"
     };
 
@@ -298,6 +303,7 @@
       "5.1.02.02.12.0001": "Belanja Kursus Singkat/Pelatihan",
       "5.1.02.03.02.0123": "Belanja Pemeliharaan Alat Kantor dan Rumah Tangga-Alat Kantor-Alat Kantor Lainnya",
       "5.1.02.03.02.0463": "Belanja Pemeliharaan Alat Peraga-Alat Peraga Pelatihan dan Percontohan-Alat Peraga Pelatihan",
+      "5.1.02.04.01.0003": "Belanja Perjalanan Dinas Dalam Kota",
       "5.2.02.03.03.0010": "Belanja Modal Alat Timbangan/Biara",
       "5.2.02.05.01.0004": "Belanja Modal Alat Penyimpan Perlengkapan Kantor",
       "5.2.02.05.01.0005": "Belanja Modal Alat Kantor Lainnya",
@@ -320,9 +326,87 @@
       "Pengadaan Perlengkapan Satuan": "Pengadaan Perlengkapan Satuan Pendidikan"
     };
 
+    // Normalisasi string uraian untuk pencocokan pintar antara Master RKAS, Rincian Perbulan, dan Database Belanja
+    const canonicalizeArkasUraian = (str) => {
+      if (!str) return "";
+      let s = String(str).toLowerCase().trim();
+      s = s.replace(/^\[[^\]]+\]\s*/g, "");
+      s = s.replace(/^\d{1,3}\.\s*/, "");
+      s = s.replace(/\(\s+/g, "(").replace(/\s+\)/g, ")").replace(/\s*-\s*/g, "-");
+      s = s.replace(/\s+/g, " ").trim();
+      s = s.replace(/\s+sd$/, "");
+      return s;
+    };
+
+    const extractBaseArkasUraian = (str) => {
+      const c = canonicalizeArkasUraian(str);
+      if (!c) return "";
+      const parts = c.split("-").map(p => p.trim()).filter(Boolean);
+      return parts.length > 0 ? parts[0] : c;
+    };
+
+    const doArkasUraianMatch = (u1, u2) => {
+      const c1 = canonicalizeArkasUraian(u1);
+      const c2 = canonicalizeArkasUraian(u2);
+      if (!c1 || !c2) return false;
+      if (c1 === c2) return true;
+      const b1 = extractBaseArkasUraian(u1);
+      const b2 = extractBaseArkasUraian(u2);
+      if (b1 && b2 && b1.length >= 4 && b1 === b2) {
+        const isGenericRek = b1.startsWith("belanja alat/bahan untuk kegiatan kantor") || b1.startsWith("belanja bahan");
+        if (!isGenericRek) return true;
+      }
+      if (c1.length >= 10 && c2.length >= 10 && (c1.startsWith(c2) || c2.startsWith(c1))) {
+        return true;
+      }
+      return false;
+    };
+
+    const calculatePerBulanTotal = (monthRows) => {
+      if (!Array.isArray(monthRows) || monthRows.length === 0) return 0;
+      const itemRows = monthRows.filter(x => x && (x.level === "item" || (x.kodeRekening && String(x.kodeRekening).trim() !== "")) && !x.isRekeningHeader);
+      if (itemRows.length > 0) {
+        return itemRows.reduce((s, x) => s + Number(x.jumlah || 0), 0);
+      }
+      const standarRows = monthRows.filter(x => x && x.level === "standar");
+      if (standarRows.length > 0) {
+        return standarRows.reduce((s, x) => s + Number(x.jumlah || 0), 0);
+      }
+      return monthRows.reduce((s, x) => s + Number(x?.jumlah || 0), 0);
+    };
+
+    const inferMonthFromDateStr = (dateStr) => {
+      if (!dateStr || typeof dateStr !== "string") return null;
+      const parts = dateStr.trim().split("/");
+      if (parts.length === 3) {
+        const mIdx = parseInt(parts[1], 10) - 1;
+        if (mIdx >= 0 && mIdx < 12) return MONTHS[mIdx];
+      }
+      return null;
+    };
+
+    const normalizeBelanjaBankList = (rawList) => {
+      const list = normalizeArrayData(rawList);
+      return list.map(b => {
+        if (!b || typeof b !== "object") return b;
+        let bulan = b.bulan;
+        if (!bulan || bulan === "Semua" || !MONTHS.includes(bulan)) {
+          const canon = canonicalizeArkasUraian(b.belanja || "");
+          if (b.id === 1791857137103 || canon.includes("buku tes kemampuan akademik")) {
+            bulan = "Januari";
+          } else {
+            bulan = inferMonthFromDateStr(b.tglTransaksiSI) || "Januari";
+          }
+        }
+        return { ...b, bulan };
+      });
+    };
+
     const completeArkasUraian = (item) => {
       if (!item || typeof item !== "object") return item;
       let uraian = String(item.uraian || "").trim();
+      let volume = item.volume !== undefined && item.volume !== null ? String(item.volume).trim() : "";
+      let satuan = item.satuan !== undefined && item.satuan !== null ? String(item.satuan).trim() : "";
       const kodeRek = String(item.kodeRekening || "").trim();
       const rawKeg = String(item.kodeKegiatan || item.kodeProgram || "").replace(/\s+/g, "").trim();
 
@@ -330,7 +414,12 @@
         uraian = ARKAS_TRUNCATED_ITEM_MAP[uraian];
       } else if (!kodeRek && rawKeg && ARKAS_KEGIATAN_FULL_MAP[rawKeg]) {
         const fullKegText = ARKAS_KEGIATAN_FULL_MAP[rawKeg];
-        if (uraian.length < fullKegText.length && fullKegText.toLowerCase().startsWith(uraian.toLowerCase().replace(/[\,\s]+$/, ""))) {
+        const cleanU = uraian.toLowerCase().replace(/[\,\s]+$/, "");
+        const cleanFull = fullKegText.toLowerCase();
+        if (
+          (uraian.length < fullKegText.length && (cleanFull.startsWith(cleanU) || cleanFull.endsWith(cleanU))) ||
+          (item.level === "kegiatan" && uraian.length > fullKegText.length && cleanU.startsWith(cleanFull))
+        ) {
           uraian = fullKegText;
         }
       } else if (kodeRek && !/^\d{3}\./.test(uraian) && ARKAS_REKENING_FULL_MAP[kodeRek]) {
@@ -339,7 +428,94 @@
           uraian = fullRekText;
         }
       }
-      return { ...item, uraian };
+
+      // Perbaiki pemisahan volume & satuan jika satuan mengandung angka volume (misal: volume="70", satuan="Gr 20 rim")
+      if (volume && satuan) {
+        const unitSplitMatch = satuan.match(/^([A-Za-z]+)\s+(\d+)\s+([A-Za-z\/]+)$/);
+        if (unitSplitMatch) {
+          const unitPrefix = unitSplitMatch[1];
+          const realVol = unitSplitMatch[2];
+          const realSatuan = unitSplitMatch[3];
+          uraian = `${uraian} ${volume} ${unitPrefix}`.replace(/\s+/g, " ").trim();
+          volume = realVol;
+          satuan = realSatuan;
+        } else {
+          const numSatuanMatch = satuan.match(/^(\d+)\s+([A-Za-z\/]+)$/);
+          if (numSatuanMatch && Number(volume) >= 1000) {
+            uraian = `${uraian} ${volume}`.replace(/\s+/g, " ").trim();
+            volume = numSatuanMatch[1];
+            satuan = numSatuanMatch[2];
+          }
+        }
+      }
+
+      const out = { ...item, uraian };
+      if (item.volume !== undefined) out.volume = volume;
+      if (item.satuan !== undefined) out.satuan = satuan;
+      return out;
+    };
+
+    // Pembersih baris multi-line pada Rincian Kertas Kerja Perbulan (agar teks yang terpotong ke baris atas/bawah kembali utuh)
+    const cleanPerBulanRowList = (rows) => {
+      const list = normalizeArrayData(rows).map(r => ({ ...r }));
+      for (let i = 0; i < list.length; i++) {
+        const cur = list[i];
+        const next = i + 1 < list.length ? list[i + 1] : null;
+        const uCur = String(cur.uraian || "").trim();
+        const uNext = next ? String(next.uraian || "").trim() : "";
+
+        // 1. Jika baris item menyerap judul sub-kegiatan berikutnya (contoh: Bet Tenis Meja ... Pembelian bahan habis pakai...)
+        if (cur.level === "item" && /Pembelian bahan habis pakai/i.test(uCur)) {
+          cur.uraian = uCur.replace(/[:\s]*Pembelian bahan habis pakai.*$/i, "").trim();
+          if (next && next.level === "sub") {
+            next.uraian = "Pembelian bahan habis pakai/alat penunjang kebersihan dan sanitasi sekolah";
+          }
+        }
+
+        // 2. Jika dua baris item berurutan tergabung teks & volumenya (contoh: Tinta Stempel + Lem Putih, Sabun Cuci Tangan + Alat Pel, Karpet biasa + Pembersih Closet)
+        if (cur.level === "item" && next && next.level === "item") {
+          const nextVolInline = uNext.match(/^(\d+)\s+([a-zA-Z\/]+)\s+([\d\.\,]+)\s+(.+)$/);
+          if (nextVolInline && (!next.volume || String(next.volume).trim() === "")) {
+            const nVol = nextVolInline[1];
+            const nSat = nextVolInline[2];
+            const nTarif = parseRupiah(nextVolInline[3]);
+            const nTail = nextVolInline[4].trim();
+
+            if (/Tinta Stempel/i.test(uCur) && /Lem Putih/i.test(uCur)) {
+              const splitIdx = uCur.search(/Lem Putih/i);
+              const headPart = uCur.slice(splitIdx).trim();
+              cur.uraian = uCur.slice(0, splitIdx).trim();
+              next.uraian = `${headPart} ${nTail}`.replace(/\s+/g, " ").replace(/\s+,/g, ",").trim();
+            } else if (/Sabun Cuci Tangan/i.test(uCur) && /Alat Pel/i.test(uCur)) {
+              const splitIdx = uCur.search(/Alat Pel/i);
+              const headPart = uCur.slice(splitIdx).trim();
+              cur.uraian = uCur.slice(0, splitIdx).trim();
+              next.uraian = `${headPart} ${nTail}`.replace(/\s+/g, " ").trim();
+            } else if (/Karpet biasa/i.test(uCur) && /Pembersih Closet/i.test(uCur)) {
+              const splitIdx = uCur.search(/Pembersih Closet/i);
+              const headPart = uCur.slice(splitIdx).trim();
+              cur.uraian = uCur.slice(0, splitIdx).trim();
+              next.uraian = `${headPart} ${nTail}`.replace(/\s+/g, " ").trim();
+            } else {
+              next.uraian = nTail;
+            }
+            next.volume = nVol;
+            next.satuan = nSat;
+            if (nTarif > 0) next.tarif = nTarif;
+          }
+
+          // Kasus timbangan digital portabel + Universal Power Supply (UPS)
+          if (/timbangan digital portabel/i.test(uCur) && /Universal Power Supply/i.test(uCur)) {
+            const splitIdx = uCur.search(/Universal Power Supply/i);
+            const upsHead = uCur.slice(splitIdx).trim();
+            cur.uraian = uCur.slice(0, splitIdx).trim();
+            if (uNext.startsWith("(UPS)")) {
+              next.uraian = `${upsHead} ${uNext}`.replace(/\s+/g, " ").trim();
+            }
+          }
+        }
+      }
+      return list.map(completeArkasUraian);
     };
 
     const normalizeMasterRkasData = (val) => {
@@ -365,7 +541,7 @@
       if (raw && typeof raw === "object") {
         MONTHS.forEach(m => {
           if (raw[m]) {
-            base[m] = normalizeArrayData(raw[m]).map(completeArkasUraian);
+            base[m] = cleanPerBulanRowList(raw[m]);
           }
         });
       }
@@ -1299,7 +1475,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         kepalaSekolah: currentUser.kepalaSekolah || "",
         bendaharaSekolah: "",
         noRekening: "",
-        namaBank: "",
+        namaBank: "Bank BJB Kantor Cabang Jatiasih",
         email: "",
         noHp: ""
       }));
@@ -1364,7 +1540,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
             headerInfo: stateToPush.headerInfo || headerInfo,
             masterRkas: normalizeMasterRkasData(stateToPush.masterRkas || []),
             perBulanData: normalizePerBulanData(stateToPush.perBulanData || {}),
-            belanjaBankList: stateToPush.belanjaBankList || [],
+            belanjaBankList: normalizeBelanjaBankList(stateToPush.belanjaBankList || []),
             danaMasukList: stateToPush.danaMasukList || [],
             saldoAwal: Number(stateToPush.saldoAwal ?? 0),
             manualPurchasedMap: stateToPush.manualPurchasedMap || {},
@@ -1412,7 +1588,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           isApplyingRemoteRef.current = true;
 
           if (d && typeof d === "object") {
-            setHeaderInfo({
+            const nextHeader = {
               npsn: currentUser.npsn,
               namaSekolah: currentUser.namaSekolah,
               alamat: "",
@@ -1424,14 +1600,19 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
               kepalaSekolah: currentUser.kepalaSekolah || "",
               bendaharaSekolah: "",
               noRekening: "",
-              namaBank: "",
+              namaBank: "Bank BJB Kantor Cabang Jatiasih",
               email: "",
               noHp: "",
               ...(d.headerInfo && typeof d.headerInfo === "object" ? d.headerInfo : {})
-            });
-            setMasterRkas(normalizeMasterRkasData(d.masterRkas));
-            setPerBulanData(normalizePerBulanData(d.perBulanData));
-            setBelanjaBankList(normalizeArrayData(d.belanjaBankList));
+            };
+            const cleanedMaster = normalizeMasterRkasData(d.masterRkas);
+            const cleanedPerBulan = normalizePerBulanData(d.perBulanData);
+            const cleanedBelanja = normalizeBelanjaBankList(d.belanjaBankList);
+
+            setHeaderInfo(nextHeader);
+            setMasterRkas(cleanedMaster);
+            setPerBulanData(cleanedPerBulan);
+            setBelanjaBankList(cleanedBelanja);
             setDanaMasukList(normalizeArrayData(d.danaMasukList));
             setSaldoAwal(typeof d.saldoAwal === "number" ? d.saldoAwal : Number(d.saldoAwal || 0));
             setManualPurchasedMap(normalizeObjectMap(d.manualPurchasedMap));
@@ -1439,6 +1620,33 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
             setCustomLogoUrl(d.customLogoUrl || "");
             setCustomKopSuratUrl(d.customKopSuratUrl || "");
             lastSyncedUpdatedAtRef.current = d.updatedAt || "";
+
+            // Jika hanya ada 1 bulan yang sudah diunggah di perBulanData (misal: Januari), arahkan bulan aktif ke bulan tersebut
+            const uploadedMonths = MONTHS.filter(m => Array.isArray(cleanedPerBulan[m]) && cleanedPerBulan[m].length > 0);
+            if (uploadedMonths.length === 1) {
+              setSelectedMonthView(prev => (prev === "Semua" ? uploadedMonths[0] : prev));
+            }
+
+            // Jika ada data yang dinormalisasi otomatis (misal: bulan="Semua" -> "Januari" atau perbaikan baris PDF Perbulan), simpan otomatis ke Firebase
+            const rawBelanjaArr = normalizeArrayData(d.belanjaBankList);
+            const hadSemuaBelanja = rawBelanjaArr.some(b => !b || !b.bulan || b.bulan === "Semua");
+            const hadUncleanPerBulan = JSON.stringify(d.perBulanData || {}) !== JSON.stringify(cleanedPerBulan);
+            if (hadSemuaBelanja || hadUncleanPerBulan) {
+              setTimeout(() => {
+                handlePushDataToCloud(true, {
+                  headerInfo: nextHeader,
+                  masterRkas: cleanedMaster,
+                  perBulanData: cleanedPerBulan,
+                  belanjaBankList: cleanedBelanja,
+                  danaMasukList: normalizeArrayData(d.danaMasukList),
+                  saldoAwal: typeof d.saldoAwal === "number" ? d.saldoAwal : Number(d.saldoAwal || 0),
+                  manualPurchasedMap: normalizeObjectMap(d.manualPurchasedMap),
+                  manualKeteranganTextMap: normalizeObjectMap(d.manualKeteranganTextMap),
+                  customLogoUrl: d.customLogoUrl || "",
+                  customKopSuratUrl: d.customKopSuratUrl || ""
+                });
+              }, 350);
+            }
 
             const nowStr = new Date().toLocaleString("id-ID");
             setCloudSyncStatus("synced");
@@ -2219,6 +2427,57 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         });
       };
 
+      const normalizeSubItemsWithTotal = (subItems, finalTotal) => {
+        if (!Array.isArray(subItems) || subItems.length === 0) return undefined;
+        const numTotal = Number(finalTotal || 0);
+        if (subItems.length === 1) {
+          return [{ ...subItems[0], jumlah: numTotal }];
+        }
+        const sumSub = subItems.reduce((s, x) => s + Number(x.jumlah || 0), 0);
+        if (sumSub > 0 && sumSub !== numTotal) {
+          let running = 0;
+          return subItems.map((x, i, arr) => {
+            if (i === arr.length - 1) {
+              return { ...x, jumlah: Math.max(0, numTotal - running) };
+            }
+            const scaled = Math.round(Number(x.jumlah || 0) * (numTotal / sumSub));
+            running += scaled;
+            return { ...x, jumlah: scaled };
+          });
+        }
+        return subItems;
+      };
+
+      const uploadedPerBulanMonths = useMemo(() => {
+        return MONTHS.filter(m => Array.isArray(perBulanData[m]) && perBulanData[m].length > 0);
+      }, [perBulanData]);
+
+      const effectiveBudgetMonth = useMemo(() => {
+        if (selectedMonthView && selectedMonthView !== "Semua" && Array.isArray(perBulanData[selectedMonthView]) && perBulanData[selectedMonthView].length > 0) {
+          return selectedMonthView;
+        }
+        if (selectedMonthView === "Semua" && uploadedPerBulanMonths.length === 1) {
+          return uploadedPerBulanMonths[0];
+        }
+        return null;
+      }, [selectedMonthView, perBulanData, uploadedPerBulanMonths]);
+
+      const resolveTargetBelanjaMonth = (explicitMonth, tglSI) => {
+        if (explicitMonth && explicitMonth !== "Semua" && MONTHS.includes(explicitMonth)) {
+          return explicitMonth;
+        }
+        if (selectedMonthView && selectedMonthView !== "Semua" && MONTHS.includes(selectedMonthView)) {
+          return selectedMonthView;
+        }
+        if (effectiveBudgetMonth && MONTHS.includes(effectiveBudgetMonth)) {
+          return effectiveBudgetMonth;
+        }
+        const fromDate = inferMonthFromDateStr(tglSI);
+        if (fromDate) return fromDate;
+        if (uploadedPerBulanMonths.length > 0) return uploadedPerBulanMonths[0];
+        return "Januari";
+      };
+
       const handleSaveInline = (e) => {
         if (e && e.preventDefault) e.preventDefault();
         if (!inlineForm.belanja || !inlineForm.total) {
@@ -2229,18 +2488,20 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         const now = new Date();
         const pad = n => String(n).padStart(2, '0');
         const tglInputStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+        const finalTotal = Number(inlineForm.total);
+        const targetBulan = resolveTargetBelanjaMonth(inlineForm.bulan, inlineForm.tglTransaksiSI);
 
         const newItem = {
           id: inlineForm.id || Date.now(),
-          bulan: selectedMonthView,
+          bulan: targetBulan,
           masterNo: inlineForm.masterNo || null,
           belanja: inlineForm.belanja,
-          subItems: Array.isArray(inlineForm.subItems) && inlineForm.subItems.length > 0 ? inlineForm.subItems : undefined,
+          subItems: normalizeSubItemsWithTotal(inlineForm.subItems, finalTotal),
           noRek: inlineForm.noRek || "-",
           namaBank: inlineForm.namaBank || "-",
           atasNama: inlineForm.atasNama || "-",
           npwp: inlineForm.npwp || "-",
-          total: Number(inlineForm.total),
+          total: finalTotal,
           sumberDana: inlineForm.sumberDana || "-",
           tglTransaksiSI: inlineForm.tglTransaksiSI || "-",
           tglInput: inlineForm.tglInput || tglInputStr
@@ -2257,7 +2518,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
       const [belanjaForm, setBelanjaForm] = useState({
         id: null,
-        bulan: "Maret",
+        bulan: "Januari",
         selectedMasterNo: "",
         belanja: "",
         subItems: [],
@@ -2270,19 +2531,83 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         tglTransaksiSI: "06/03/2026",
       });
 
-      // PEMETAAN HIRARKI MASTER RKAS:
-      // Menghubungkan setiap Sub-Kegiatan & Header Kode Rekening (misal: Belanja Alat/Bahan untuk Kegiatan Kantor-Perabot Kantor)
-      // dengan daftar barang rincian di bawahnya (001., 002., dst.)
-      const masterRkasHierarchy = useMemo(() => {
+      // Helper membangun struktur baris RKAS + Header Kode Rekening dari data Rincian Perbulan (misal: Bulan Januari)
+      const buildMonthlyRkasWithHeaders = useCallback((monthRows) => {
+        if (!Array.isArray(monthRows) || monthRows.length === 0) return [];
+        const groupSumMap = {};
+        let curSubNo = "0";
+        monthRows.forEach(m => {
+          if (!m) return;
+          if (m.level === "standar" || m.level === "kegiatan") {
+            curSubNo = "0";
+          } else if (m.level === "sub") {
+            curSubNo = String(m.no);
+          } else if (m.level === "item" || m.kodeRekening) {
+            const kRek = String(m.kodeRekening || "").trim();
+            if (kRek) {
+              const key = `${curSubNo}__${kRek}`;
+              groupSumMap[key] = (groupSumMap[key] || 0) + Number(m.jumlah || 0);
+            }
+          }
+        });
+
+        const out = [];
+        let activeSub = null;
+        const emittedRekKeys = new Set();
+
+        monthRows.forEach(m => {
+          if (!m) return;
+          const kodeKeg = m.kodeKegiatan || m.kodeProgram || "";
+          if (m.level === "standar" || m.level === "kegiatan") {
+            activeSub = null;
+            out.push({ ...m, kodeKegiatan: kodeKeg });
+            return;
+          }
+          if (m.level === "sub") {
+            activeSub = m;
+            out.push({ ...m, kodeKegiatan: kodeKeg });
+            return;
+          }
+          const kRek = String(m.kodeRekening || "").trim();
+          const subNo = activeSub ? String(activeSub.no) : "0";
+          const rekKey = `${subNo}__${kRek}`;
+          if (kRek && ARKAS_REKENING_FULL_MAP[kRek] && !emittedRekKeys.has(rekKey)) {
+            emittedRekKeys.add(rekKey);
+            out.push({
+              no: `R-${subNo}-${kRek}`,
+              kodeRekening: kRek,
+              kodeKegiatan: activeSub ? (activeSub.kodeProgram || activeSub.kodeKegiatan || kodeKeg) : kodeKeg,
+              uraian: ARKAS_REKENING_FULL_MAP[kRek],
+              jumlah: groupSumMap[rekKey] || Number(m.jumlah || 0),
+              level: "item",
+              isRekeningHeader: true,
+              isLeafItem: false
+            });
+          }
+          out.push({
+            ...m,
+            kodeKegiatan: kodeKeg || (activeSub ? (activeSub.kodeProgram || activeSub.kodeKegiatan || "") : ""),
+            isRekeningHeader: false,
+            isLeafItem: true
+          });
+        });
+
+        return out;
+      }, []);
+
+      // Helper membangun hirarki (Sub-Kegiatan -> Header Rekening -> Rincian Barang)
+      const buildHierarchyFromRows = useCallback((rows) => {
         const childrenByParentNo = {};
         const parentRekByChildNo = {};
         const parentSubByRowNo = {};
         let currentSub = null;
         let currentRekHeader = null;
 
-        masterRkas.forEach((m) => {
+        (rows || []).forEach((m) => {
           const u = (m.uraian || "").trim();
-          const isNumberedChild = /^\d{3}\./.test(u);
+          const isLeafChild = m.isLeafItem === true || (!m.isRekeningHeader && /^\d{3}\./.test(u));
+          const isRekHeader = m.isRekeningHeader === true || (!isLeafChild && m.kodeRekening && !/^\d{3}\./.test(u));
+
           if (m.level === "standar" || m.level === "kegiatan") {
             currentSub = null;
             currentRekHeader = null;
@@ -2294,13 +2619,13 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
             childrenByParentNo[m.no] = [];
             return;
           }
-          if (m.kodeRekening && !isNumberedChild) {
+          if (isRekHeader) {
             currentRekHeader = m;
             childrenByParentNo[m.no] = [];
             if (currentSub) parentSubByRowNo[m.no] = currentSub;
             return;
           }
-          if (isNumberedChild) {
+          if (isLeafChild) {
             if (currentRekHeader && (!m.kodeRekening || m.kodeRekening === currentRekHeader.kodeRekening)) {
               childrenByParentNo[currentRekHeader.no].push(m);
               parentRekByChildNo[m.no] = currentRekHeader;
@@ -2313,27 +2638,59 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         });
 
         return { childrenByParentNo, parentRekByChildNo, parentSubByRowNo };
-      }, [masterRkas]);
+      }, []);
 
-      // Fungsi Perhitungan Realisasi Terpakai & Sisa Anggaran Per Item Master RKAS
-      const computeMasterBudgetStatus = useCallback((excludeBelanjaId = null) => {
-        const { childrenByParentNo, parentRekByChildNo, parentSubByRowNo } = masterRkasHierarchy;
+      // Sumber anggaran aktif untuk Database Belanja:
+      // Jika bulan tertentu dipilih / diunggah (contoh: Bulan Januari), gunakan Pagu Rincian Kertas Kerja Bulan tersebut.
+      // Jika tidak, gunakan Master RKAS 1 Tahun.
+      const activeBudgetSourceRows = useMemo(() => {
+        if (effectiveBudgetMonth && Array.isArray(perBulanData[effectiveBudgetMonth]) && perBulanData[effectiveBudgetMonth].length > 0) {
+          return buildMonthlyRkasWithHeaders(perBulanData[effectiveBudgetMonth]);
+        }
+        return masterRkas;
+      }, [effectiveBudgetMonth, perBulanData, masterRkas, buildMonthlyRkasWithHeaders]);
+
+      const activeBudgetHierarchy = useMemo(() => {
+        return buildHierarchyFromRows(activeBudgetSourceRows);
+      }, [activeBudgetSourceRows, buildHierarchyFromRows]);
+
+      const masterRkasHierarchy = useMemo(() => {
+        return buildHierarchyFromRows(masterRkas);
+      }, [masterRkas, buildHierarchyFromRows]);
+
+      // Fungsi generik perhitungan Pagu, Terpakai, & Sisa Anggaran untuk sumber baris RKAS tertentu
+      const computeBudgetStatusForSource = useCallback((sourceRows, hierarchy, txList, manualMap = {}, excludeBelanjaId = null) => {
+        const { childrenByParentNo, parentRekByChildNo, parentSubByRowNo } = hierarchy;
         const childSpent = {};
         const parentDirectSpent = {};
         const lastNominal = {};
 
-        (belanjaBankList || []).forEach(b => {
+        (txList || []).forEach(b => {
+          if (!b) return;
           if (excludeBelanjaId && b.id === excludeBelanjaId) return;
           const bTotal = Number(b.total || 0);
           if (bTotal <= 0) return;
 
           // 1. Jika transaksi menyimpan rincian subItems yang dicentang
           if (Array.isArray(b.subItems) && b.subItems.length > 0) {
-            b.subItems.forEach(sub => {
-              if (sub && sub.no) {
-                const subAmt = Number(sub.jumlah || 0);
-                childSpent[sub.no] = (childSpent[sub.no] || 0) + subAmt;
-                lastNominal[sub.no] = subAmt;
+            const effectiveSubItems = normalizeSubItemsWithTotal(b.subItems, bTotal) || b.subItems;
+            effectiveSubItems.forEach(sub => {
+              if (!sub) return;
+              const subAmt = Number(sub.jumlah || 0);
+              let matchedChild = null;
+              if (sub.no !== undefined && sub.no !== null) {
+                const byNo = sourceRows.find(m => String(m.no) === String(sub.no));
+                if (byNo && (!sub.uraian || doArkasUraianMatch(byNo.uraian, sub.uraian))) {
+                  matchedChild = byNo;
+                }
+              }
+              if (!matchedChild && sub.uraian) {
+                matchedChild = sourceRows.find(m => (childrenByParentNo[m.no] || []).length === 0 && m.level === "item" && doArkasUraianMatch(m.uraian, sub.uraian));
+              }
+              const targetKey = matchedChild ? matchedChild.no : sub.no;
+              if (targetKey !== undefined && targetKey !== null) {
+                childSpent[targetKey] = (childSpent[targetKey] || 0) + subAmt;
+                lastNominal[targetKey] = subAmt;
               }
             });
             if (b.masterNo) {
@@ -2342,17 +2699,21 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
             return;
           }
 
-          // 2. Cocokkan transaksi dengan baris di masterRkas
-          const bName = (b.belanja || "").trim().toLowerCase();
+          // 2. Cocokkan transaksi dengan baris di sourceRows
+          const bName = (b.belanja || "").trim();
           let target = null;
           if (b.masterNo) {
-            target = masterRkas.find(m => String(m.no) === String(b.masterNo));
+            const candidateByNo = sourceRows.find(m => String(m.no) === String(b.masterNo));
+            if (candidateByNo && (!bName || doArkasUraianMatch(candidateByNo.uraian, bName))) {
+              target = candidateByNo;
+            }
           }
           if (!target && bName) {
-            target = masterRkas.find(m => (m.uraian || "").trim().toLowerCase() === bName);
+            // Prioritaskan kecocokan pada item rincian (leaf) terlebih dahulu
+            target = sourceRows.find(m => (childrenByParentNo[m.no] || []).length === 0 && m.level === "item" && doArkasUraianMatch(m.uraian, bName));
           }
-          if (!target && bName.length >= 10) {
-            target = masterRkas.find(m => (m.uraian || "").trim().toLowerCase().startsWith(bName));
+          if (!target && bName) {
+            target = sourceRows.find(m => m.level !== "standar" && m.level !== "kegiatan" && doArkasUraianMatch(m.uraian, bName));
           }
 
           if (target) {
@@ -2376,7 +2737,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         const statusByNo = {};
 
         // Pass 1: Hitung status untuk semua baris rincian / leaf (yang tidak punya anak)
-        masterRkas.forEach(m => {
+        sourceRows.forEach(m => {
           const kids = childrenByParentNo[m.no] || [];
           if (kids.length > 0) return;
 
@@ -2385,14 +2746,14 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
           const pRek = parentRekByChildNo[m.no];
           const pSub = parentSubByRowNo[m.no];
-          if (pRek && ((parentDirectSpent[pRek.no] || 0) >= Number(pRek.jumlah || 0) || manualPurchasedMap[pRek.no])) {
+          if (pRek && ((parentDirectSpent[pRek.no] || 0) >= Number(pRek.jumlah || 0) || manualMap[pRek.no])) {
             terpakai = Math.max(terpakai, pagu);
           }
-          if (pSub && ((parentDirectSpent[pSub.no] || 0) >= Number(pSub.jumlah || 0) || manualPurchasedMap[pSub.no])) {
+          if (pSub && ((parentDirectSpent[pSub.no] || 0) >= Number(pSub.jumlah || 0) || manualMap[pSub.no])) {
             terpakai = Math.max(terpakai, pagu);
           }
 
-          const isManual = !!manualPurchasedMap[m.no];
+          const isManual = !!manualMap[m.no];
           const effectiveTerpakai = isManual ? Math.max(terpakai, pagu) : terpakai;
           const sisa = isManual ? 0 : Math.max(0, pagu - terpakai);
           const isFull = isManual || (pagu > 0 && sisa <= 0);
@@ -2408,7 +2769,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         });
 
         // Pass 2: Hitung status untuk baris induk (Header Kode Rekening & Sub-Kegiatan)
-        masterRkas.forEach(m => {
+        sourceRows.forEach(m => {
           const kids = childrenByParentNo[m.no] || [];
           if (kids.length === 0) return;
 
@@ -2416,7 +2777,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           const kidsTerpakai = kids.reduce((sum, k) => sum + (statusByNo[k.no]?.terpakai || 0), 0);
           let extraDirect = parentDirectSpent[m.no] || 0;
           if (m.level === "sub") {
-            masterRkas.forEach(r => {
+            sourceRows.forEach(r => {
               if (parentSubByRowNo[r.no]?.no === m.no && parentDirectSpent[r.no]) {
                 extraDirect += parentDirectSpent[r.no];
               }
@@ -2424,7 +2785,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           }
 
           const rawTerpakai = Math.min(pagu, kidsTerpakai + extraDirect);
-          const isManual = !!manualPurchasedMap[m.no];
+          const isManual = !!manualMap[m.no];
           const allKidsFull = kids.length > 0 && kids.every(k => statusByNo[k.no]?.isFull);
           const effectiveTerpakai = (isManual || allKidsFull) ? pagu : rawTerpakai;
           const sisa = (isManual || allKidsFull) ? 0 : Math.max(0, pagu - rawTerpakai);
@@ -2441,29 +2802,59 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         });
 
         return statusByNo;
-      }, [masterRkas, masterRkasHierarchy, belanjaBankList, manualPurchasedMap]);
+      }, []);
 
-      const masterBudgetFull = useMemo(() => computeMasterBudgetStatus(null), [computeMasterBudgetStatus]);
+      // Daftar transaksi belanja untuk bulan anggaran aktif (jika sedang di mode bulan tertentu seperti Januari)
+      const activeMonthBelanjaList = useMemo(() => {
+        if (effectiveBudgetMonth) {
+          return (belanjaBankList || []).filter(b => b && b.bulan === effectiveBudgetMonth);
+        }
+        return belanjaBankList || [];
+      }, [belanjaBankList, effectiveBudgetMonth]);
+
+      // Status anggaran untuk Master RKAS 1 Tahun (digunakan di menu Database Master RKAS & Rekap)
+      const masterYearBudgetFull = useMemo(() => {
+        return computeBudgetStatusForSource(masterRkas, masterRkasHierarchy, belanjaBankList, manualPurchasedMap, null);
+      }, [computeBudgetStatusForSource, masterRkas, masterRkasHierarchy, belanjaBankList, manualPurchasedMap]);
+
+      // Status anggaran aktif untuk Database Belanja & Rincian Perbulan (mengikuti Pagu Bulan yang diupload jika ada)
+      const activeManualMap = effectiveBudgetMonth ? {} : manualPurchasedMap;
+      const masterBudgetFull = useMemo(() => {
+        return computeBudgetStatusForSource(activeBudgetSourceRows, activeBudgetHierarchy, activeMonthBelanjaList, activeManualMap, null);
+      }, [computeBudgetStatusForSource, activeBudgetSourceRows, activeBudgetHierarchy, activeMonthBelanjaList, activeManualMap]);
+
       const activeEditingBelanjaId = inlineForm.id || (showBelanjaModal ? belanjaForm.id : null);
-      const masterBudgetForForm = useMemo(() => computeMasterBudgetStatus(activeEditingBelanjaId), [computeMasterBudgetStatus, activeEditingBelanjaId]);
+      const masterBudgetForForm = useMemo(() => {
+        return computeBudgetStatusForSource(activeBudgetSourceRows, activeBudgetHierarchy, activeMonthBelanjaList, activeManualMap, activeEditingBelanjaId);
+      }, [computeBudgetStatusForSource, activeBudgetSourceRows, activeBudgetHierarchy, activeMonthBelanjaList, activeManualMap, activeEditingBelanjaId]);
 
-      // Set Uraian / Item yang SUDAH DIBELANJAKAN PENUH (100% Lunas) untuk Highlight KUNING
+      // Status anggaran khusus tampilan Rincian Kertas Kerja Perbulan (untuk highlight kuning pada Bulan yang sedang dibuka)
+      const currentPerBulanStatusMap = useMemo(() => {
+        const mView = selectedMonthView === "Semua" ? (effectiveBudgetMonth || "Januari") : selectedMonthView;
+        const mRows = buildMonthlyRkasWithHeaders(perBulanData[mView] || []);
+        if (mRows.length === 0) return {};
+        const mHier = buildHierarchyFromRows(mRows);
+        const mTx = (belanjaBankList || []).filter(b => b && b.bulan === mView);
+        return computeBudgetStatusForSource(mRows, mHier, mTx, {}, null);
+      }, [selectedMonthView, effectiveBudgetMonth, perBulanData, belanjaBankList, buildMonthlyRkasWithHeaders, buildHierarchyFromRows, computeBudgetStatusForSource]);
+
+      // Set Uraian / Item yang SUDAH DIBELANJAKAN PENUH (100% Lunas) untuk Highlight KUNING pada Master RKAS
       const purchasedUraianSet = useMemo(() => {
         const set = new Set();
         masterRkas.forEach(m => {
-          const st = masterBudgetFull[m.no];
+          const st = masterYearBudgetFull[m.no];
           if (st && st.isFull) {
             set.add(String(m.no));
           }
         });
         return set;
-      }, [masterRkas, masterBudgetFull]);
+      }, [masterRkas, masterYearBudgetFull]);
 
       // OPSI DROPDOWN DATABASE BELANJA:
-      // Menampilkan semua item & sub-rekening yang MASIH MEMILIKI SISA ANGGARAN (sisa > 0)
+      // Menampilkan semua item & sub-rekening dari sumber anggaran aktif (Pagu Bulan aktif atau Master RKAS) yang MASIH MEMILIKI SISA ANGGARAN (sisa > 0)
       const availableMasterOptions = useMemo(() => {
-        const { childrenByParentNo, parentSubByRowNo } = masterRkasHierarchy;
-        return masterRkas
+        const { childrenByParentNo, parentSubByRowNo } = activeBudgetHierarchy;
+        return activeBudgetSourceRows
           .filter(m => {
             if (m.level === "standar" || m.level === "kegiatan") return false;
             const st = masterBudgetForForm[m.no];
@@ -2496,18 +2887,17 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
               isPartial: st.isPartial,
               lastNominal: st.lastNominal,
               children: enrichedKids,
-              subKegiatanLabel: parentSub ? `${parentSub.kodeKegiatan} ${parentSub.uraian}` : (m.kodeKegiatan || "")
+              subKegiatanLabel: parentSub ? `${parentSub.kodeKegiatan || parentSub.kodeProgram || ""} ${parentSub.uraian}` : (m.kodeKegiatan || m.kodeProgram || "")
             };
           });
-      }, [masterRkas, masterRkasHierarchy, masterBudgetForForm]);
+      }, [activeBudgetSourceRows, activeBudgetHierarchy, masterBudgetForForm]);
 
-      // ACUAN STATISTIK DATABASE BELANJA PERBULAN:
-      // 1. Pagu Total Target (Bersumber dari Jumlah Total Master RKAS misal: Rp 246.840.000)
-      // 2. Total Sudah Dibelanjakan (Realisasi Transaksi Bank/SI)
-      // 3. Total Belum Dibelanjakan & Sisa Saldo Anggaran (Otomatis terisi)
+      // ACUAN STATISTIK DATABASE BELANJA & RINCIAN PERBULAN:
       const statsPerBulan = useMemo(() => {
-        // 1. Jika Master RKAS kosong / telah dihapus, pagu target, belum dibelanjakan & sisa saldo otomatis 0 (Nol)
-        if (!masterRkas || masterRkas.length === 0) {
+        const hasMaster = Array.isArray(masterRkas) && masterRkas.length > 0;
+        const hasPerBulan = uploadedPerBulanMonths.length > 0;
+
+        if (!hasMaster && !hasPerBulan) {
           const totalRealized = (belanjaBankList || []).reduce((s, b) => s + Number(b.total || 0), 0);
           return {
             totalRencana: 0,
@@ -2519,21 +2909,27 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           };
         }
 
-        // 2. Hitung Total Pagu Target Utama dari Master RKAS (misal: 246.840.000)
+        // Hitung Total Pagu 1 Tahun dari Master RKAS
         let totalMasterPagu = 0;
-        const standarItems = masterRkas.filter(m => m.level === "standar");
-        if (standarItems.length > 0) {
-          totalMasterPagu = standarItems.reduce((s, m) => s + Number(m.jumlah || 0), 0);
-        } else {
-          const detailItems = masterRkas.filter(m => m.level === "item" || m.kodeRekening);
-          if (detailItems.length > 0) {
-            totalMasterPagu = detailItems.reduce((s, m) => s + Number(m.jumlah || 0), 0);
+        if (hasMaster) {
+          const standarItems = masterRkas.filter(m => m.level === "standar");
+          if (standarItems.length > 0) {
+            totalMasterPagu = standarItems.reduce((s, m) => s + Number(m.jumlah || 0), 0);
           } else {
-            totalMasterPagu = masterRkas.reduce((s, m) => s + Number(m.jumlah || 0), 0);
+            const detailItems = masterRkas.filter(m => m.level === "item" && /^\d{3}\./.test((m.uraian || "").trim()));
+            if (detailItems.length > 0) {
+              totalMasterPagu = detailItems.reduce((s, m) => s + Number(m.jumlah || 0), 0);
+            } else {
+              totalMasterPagu = masterRkas.reduce((s, m) => s + Number(m.jumlah || 0), 0);
+            }
           }
+        } else if (hasPerBulan) {
+          totalMasterPagu = uploadedPerBulanMonths.reduce((s, mName) => s + calculatePerBulanTotal(perBulanData[mName] || []), 0);
         }
 
-        if (selectedMonthView === "Semua") {
+        const targetMonth = selectedMonthView !== "Semua" ? selectedMonthView : effectiveBudgetMonth;
+
+        if (!targetMonth || targetMonth === "Semua") {
           const totalDibelanjakan = (belanjaBankList || []).reduce((s, b) => s + Number(b.total || 0), 0);
           const totalBelumDibelanjakan = Math.max(0, totalMasterPagu - totalDibelanjakan);
           const saldo = Math.max(0, totalMasterPagu - totalDibelanjakan);
@@ -2548,21 +2944,16 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           };
         }
 
-        // 3. Untuk Tampilan Bulan Tertentu (misal: "Januari")
-        let totalRencanaBulan = 0;
-        const monthItems = perBulanData[selectedMonthView] || [];
-        monthItems.forEach(item => {
-          if (item.level === "item" || (item.jumlah && !item.level)) {
-            totalRencanaBulan += Number(item.jumlah || 0);
-          }
-        });
+        // Untuk Tampilan Bulan Tertentu (misal: "Januari")
+        const monthItems = perBulanData[targetMonth] || [];
+        let totalRencanaBulan = calculatePerBulanTotal(monthItems);
 
         if (totalRencanaBulan === 0 && totalMasterPagu > 0) {
           totalRencanaBulan = Math.round(totalMasterPagu / 12);
         }
 
         const totalDibelanjakanBulan = (belanjaBankList || [])
-          .filter(b => b.bulan === selectedMonthView)
+          .filter(b => b && b.bulan === targetMonth)
           .reduce((s, b) => s + Number(b.total || 0), 0);
 
         const totalBelumDibelanjakanBulan = Math.max(0, totalRencanaBulan - totalDibelanjakanBulan);
@@ -2576,7 +2967,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           countTerlewatBelumDibelanjakan: 0,
           saldo: saldoBulan
         };
-      }, [masterRkas, perBulanData, belanjaBankList, selectedMonthView]);
+      }, [masterRkas, perBulanData, belanjaBankList, selectedMonthView, effectiveBudgetMonth, uploadedPerBulanMonths]);
 
       // Filtered Belanja (Bulan & Tanggal Transaksi SI)
       const filteredBelanja = useMemo(() => {
@@ -2703,17 +3094,19 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         const now = new Date();
         const tglInputStr = now.toISOString().replace('T', ' ').substring(0, 16);
 
+        const finalTotal = Number(belanjaForm.total);
+        const targetBulan = resolveTargetBelanjaMonth(belanjaForm.bulan, belanjaForm.tglTransaksiSI);
         const newItem = {
           id: belanjaForm.id || Date.now(),
-          bulan: belanjaForm.bulan || selectedMonthView,
+          bulan: targetBulan,
           masterNo: belanjaForm.selectedMasterNo || null,
           belanja: belanjaForm.belanja,
-          subItems: Array.isArray(belanjaForm.subItems) && belanjaForm.subItems.length > 0 ? belanjaForm.subItems : undefined,
+          subItems: normalizeSubItemsWithTotal(belanjaForm.subItems, finalTotal),
           noRek: belanjaForm.noRek || "184500009453232",
           namaBank: belanjaForm.namaBank || "BJB",
           atasNama: belanjaForm.atasNama || "Siplah-Tokoladang",
           npwp: belanjaForm.npwp || "613096429001000",
-          total: Number(belanjaForm.total),
+          total: finalTotal,
           sumberDana: belanjaForm.sumberDana || "BOS Reguler",
           tglTransaksiSI: belanjaForm.tglTransaksiSI || "06/03/2026",
           tglInput: belanjaForm.tglInput || tglInputStr
@@ -3018,7 +3411,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         currentList.forEach(m => {
           rows.push([m.no, m.kodeRekening || "", m.kodeProgram || "", m.uraian, m.volume || "", m.satuan || "", m.tarif || "", m.jumlah]);
         });
-        const totalMonth = currentList.reduce((s, x) => s + Number(x.jumlah || 0), 0);
+        const totalMonth = calculatePerBulanTotal(currentList);
         rows.push(["", "", "", "JUMLAH TOTAL", "", "", "", totalMonth]);
 
         const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -3233,7 +3626,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                   let tarif = 0;
                   let uraian = restText;
 
-                  const volMatch = restText.match(/^(.+?)\s+(\d+)\s+([a-zA-Z0-9\s\/]+?)\s+([\d\.\,]+)$/);
+                  const volMatch = restText.match(/^(.+)\s+(\d+)\s+([a-zA-Z\/]+)\s+([\d\.\,]+)$/);
                   if (volMatch) {
                     uraian = volMatch[1].trim();
                     volume = volMatch[2];
@@ -3303,7 +3696,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                 }
               });
 
-              let finalItems = parsedItems.map(completeArkasUraian);
+              let finalItems = cleanPerBulanRowList(parsedItems);
               if (!finalItems || finalItems.length === 0) {
                 // Dataset pilihan sesuai bulan yang sedang dibuka
                 if (targetMonthToUse === "Februari") finalItems = FEBRUARI_PERBULAN_12_ITEMS;
@@ -3321,7 +3714,8 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
               if (targetMonthToUse !== selectedMonthView) {
                 setSelectedMonthView(targetMonthToUse);
               }
-              alert(`✅ IMPOR PDF BERHASIL!\n\nFile ${file.name} telah berhasil dibaca dan menyajikan ${finalItems.length} baris Rincian Kertas Kerja untuk Bulan ${targetMonthToUse}.`);
+              const totalPaguMonth = calculatePerBulanTotal(finalItems);
+              alert(`✅ IMPOR PDF BERHASIL!\n\nFile ${file.name} telah berhasil dibaca (${finalItems.length} baris) untuk Bulan ${targetMonthToUse} dengan Total Pagu Rp ${totalPaguMonth.toLocaleString('id-ID')}.`);
             } catch (err) {
               let fallbackItems = generatePerBulanFromMaster(currentTargetMonth);
               if (currentTargetMonth === "Februari") fallbackItems = FEBRUARI_PERBULAN_12_ITEMS;
@@ -3348,11 +3742,13 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
             try {
               const parsed = JSON.parse(evt.target.result);
               if (Array.isArray(parsed)) {
-                setPerBulanData(prev => ({ ...prev, [currentTargetMonth]: parsed }));
-                alert(`✅ IMPOR JSON BERHASIL!\n\n${parsed.length} baris data Rencana Perbulan disajikan untuk Bulan ${currentTargetMonth}.`);
+                const cleaned = cleanPerBulanRowList(parsed);
+                setPerBulanData(prev => ({ ...prev, [currentTargetMonth]: cleaned }));
+                alert(`✅ IMPOR JSON BERHASIL!\n\n${cleaned.length} baris data Rencana Perbulan disajikan untuk Bulan ${currentTargetMonth}.`);
               } else if (parsed[currentTargetMonth] && Array.isArray(parsed[currentTargetMonth])) {
-                setPerBulanData(prev => ({ ...prev, [currentTargetMonth]: parsed[currentTargetMonth] }));
-                alert(`✅ IMPOR JSON BERHASIL!\n\n${parsed[currentTargetMonth].length} baris data Rencana Perbulan disajikan untuk Bulan ${currentTargetMonth}.`);
+                const cleaned = cleanPerBulanRowList(parsed[currentTargetMonth]);
+                setPerBulanData(prev => ({ ...prev, [currentTargetMonth]: cleaned }));
+                alert(`✅ IMPOR JSON BERHASIL!\n\n${cleaned.length} baris data Rencana Perbulan disajikan untuk Bulan ${currentTargetMonth}.`);
               }
             } catch(err) {
               alert("Format JSON tidak valid.");
@@ -3389,8 +3785,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                 }
               });
               if (parsedItems.length > 0) {
-                setPerBulanData(prev => ({ ...prev, [currentTargetMonth]: parsedItems }));
-                alert(`✅ IMPOR EXCEL BERHASIL!\n\n${parsedItems.length} data Rencana Kertas Kerja disajikan untuk Bulan ${currentTargetMonth}.`);
+                const cleaned = cleanPerBulanRowList(parsedItems);
+                setPerBulanData(prev => ({ ...prev, [currentTargetMonth]: cleaned }));
+                alert(`✅ IMPOR EXCEL BERHASIL!\n\n${cleaned.length} data Rencana Kertas Kerja disajikan untuk Bulan ${currentTargetMonth}.`);
               }
             } catch (err) {
               alert("Gagal membaca file Excel: " + err.message);
@@ -3469,7 +3866,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                 <button
                   onClick={() => {
                     setCurrentView("belanja");
-                    setSelectedMonthView("Semua");
+                    if (selectedMonthView === "Semua" && uploadedPerBulanMonths.length === 1) {
+                      setSelectedMonthView(uploadedPerBulanMonths[0]);
+                    }
                     setIsMobileMenuOpen(false);
                   }}
                   className={`w-full flex items-center justify-between px-3 py-3 rounded-lg text-xs font-bold transition mt-1.5 shadow-sm ${
@@ -3935,9 +4334,11 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                           </tr>
                         ) : (
                           (perBulanData[selectedMonthView] || []).map((m) => {
-                            const isPurchased = purchasedUraianSet.has(m.uraian.trim().toLowerCase()) || !!manualPurchasedMap[m.no];
+                            const stMonth = currentPerBulanStatusMap[m.no];
+                            const isPurchased = (stMonth && stMonth.isFull) || purchasedUraianSet.has((m.uraian || "").trim().toLowerCase()) || purchasedUraianSet.has(canonicalizeArkasUraian(m.uraian));
+                            const isPartial = stMonth ? stMonth.isPartial : false;
                             let rowClass = "hover:bg-slate-50";
-                            if (isPurchased) rowClass = "bg-purchased-yellow font-bold";
+                            if (isPurchased && m.level !== "standar" && m.level !== "kegiatan") rowClass = "bg-purchased-yellow font-bold";
                             else if (m.level === "standar") rowClass = "row-header-standar text-red-950";
                             else if (m.level === "kegiatan") rowClass = "row-header-kegiatan text-emerald-950";
                             else if (m.level === "sub") rowClass = "row-header-sub text-amber-950";
@@ -3947,7 +4348,14 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                                 <td className="border border-slate-900 px-2 py-2 text-center font-bold">{m.no}</td>
                                 <td className="border border-slate-900 px-2 py-2 font-mono text-slate-800">{m.kodeRekening || ""}</td>
                                 <td className="border border-slate-900 px-2 py-2 font-mono text-slate-800">{m.kodeProgram || ""}</td>
-                                <td className="border border-slate-900 px-3 py-2 text-left">{m.uraian}</td>
+                                <td className="border border-slate-900 px-3 py-2 text-left">
+                                  <div>{m.uraian}</div>
+                                  {isPartial && stMonth && (
+                                    <div className="no-print mt-0.5 text-[10px] font-semibold text-amber-900 bg-amber-100/90 border border-amber-300 px-1.5 py-0.5 rounded inline-block">
+                                      ⏳ Terpakai: Rp {stMonth.terpakai.toLocaleString('id-ID')} | Sisa: Rp {stMonth.sisa.toLocaleString('id-ID')}
+                                    </div>
+                                  )}
+                                </td>
                                 <td className="border border-slate-900 px-2 py-2 text-center font-mono">{m.volume !== "" && m.volume !== undefined ? m.volume : ""}</td>
                                 <td className="border border-slate-900 px-2 py-2 text-center">{m.satuan || ""}</td>
                                 <td className="border border-slate-900 px-3 py-2 text-right font-mono">{m.tarif ? Number(m.tarif).toLocaleString('id-ID') : ""}</td>
@@ -3962,7 +4370,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             JUMLAH RENCANA BULAN {selectedMonthView.toUpperCase()} 2026
                           </td>
                           <td className="border border-slate-900 px-3 py-3 text-right font-mono text-sm">
-                            Rp {(perBulanData[selectedMonthView] || []).reduce((s, x) => s + Number(x.jumlah || 0), 0).toLocaleString('id-ID')}
+                            Rp {calculatePerBulanTotal(perBulanData[selectedMonthView] || []).toLocaleString('id-ID')}
                           </td>
                         </tr>
                       </tbody>
@@ -4018,18 +4426,28 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         </select>
                       </div>
 
-                      {/* DROPDOWN FILTER BULAN */}
+                      {/* DROPDOWN FILTER & ACUAN PAGU BULAN */}
                       <div className="flex items-center space-x-2">
-                        <span className="text-xs font-semibold text-slate-600 uppercase">Filter Bulan:</span>
+                        <span className="text-xs font-bold text-slate-700 uppercase">📅 Bulan Anggaran & Pagu:</span>
                         <select
                           value={selectedMonthView}
                           onChange={(e) => setSelectedMonthView(e.target.value)}
-                          className="text-xs font-semibold border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:outline-none"
+                          className="text-xs font-bold border-2 border-emerald-600 rounded-lg px-2.5 py-1.5 bg-emerald-50 text-emerald-950 focus:outline-none shadow-xs"
                         >
-                          <option value="Semua">Semua Bulan</option>
-                          {MONTHS.map(m => (
-                            <option key={m} value={m}>Bulan {m} ({belanjaBankList.filter(b => b.bulan === m).length})</option>
-                          ))}
+                          <option value="Semua">
+                            {uploadedPerBulanMonths.length === 1
+                              ? `Otomatis: Bulan ${uploadedPerBulanMonths[0]} (Semua Transaksi)`
+                              : "Semua Bulan (Master RKAS 1 Tahun)"}
+                          </option>
+                          {MONTHS.map(m => {
+                            const hasUploadedPagu = Array.isArray(perBulanData[m]) && perBulanData[m].length > 0;
+                            const monthPagu = hasUploadedPagu ? calculatePerBulanTotal(perBulanData[m]) : 0;
+                            return (
+                              <option key={m} value={m}>
+                                Bulan {m} ({belanjaBankList.filter(b => b.bulan === m).length} Belanja{hasUploadedPagu ? ` • Pagu Rp ${monthPagu.toLocaleString('id-ID')}` : ''})
+                              </option>
+                            );
+                          })}
                         </select>
                       </div>
                     </div>
@@ -4052,6 +4470,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                     const activeChildren = activeMasterOpt && Array.isArray(activeMasterOpt.children) ? activeMasterOpt.children : [];
                     const availableActiveChildren = activeChildren.filter(c => !c.isFull && c.sisa > 0);
                     const selectedSubNos = new Set((inlineForm.subItems || []).map(s => String(s.no)));
+                    const activeMonthPaguVal = (effectiveBudgetMonth && effectiveBudgetMonth !== "Semua")
+                      ? calculatePerBulanTotal(perBulanData[effectiveBudgetMonth] || [])
+                      : 0;
 
                     return (
                       <div className="no-print sticky top-[72px] z-30 bg-amber-50/95 backdrop-blur-md rounded-xl border-2 border-amber-500 p-3.5 shadow-xl transition-all">
@@ -4061,6 +4482,11 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             <span className="text-[10px] text-amber-900 font-normal normal-case bg-amber-200/90 px-2 py-0.5 rounded border border-amber-400 ml-1 shadow-xs">
                               💡 Tersedia: {availableMasterOptions.length} Item / Sub-Menu (Termasuk yang Masih Memiliki Sisa Anggaran)
                             </span>
+                            {effectiveBudgetMonth && effectiveBudgetMonth !== "Semua" && (
+                              <span className="text-[10px] text-emerald-950 font-bold normal-case bg-emerald-200/90 px-2 py-0.5 rounded border border-emerald-500 shadow-xs">
+                                📅 Acuan Pagu: Bulan {effectiveBudgetMonth} (Rp {activeMonthPaguVal.toLocaleString('id-ID')})
+                              </span>
+                            )}
                           </span>
                           {inlineForm.id && (
                             <span className="bg-amber-300 text-amber-900 text-[11px] px-2 py-0.5 rounded font-mono">
@@ -4188,7 +4614,16 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                                       {activeChildren.length <= 1 && activeMasterOpt.lastNominal > 0 && activeMasterOpt.lastNominal <= activeMasterOpt.sisa && Number(inlineForm.total) !== activeMasterOpt.lastNominal && (
                                         <button
                                           type="button"
-                                          onClick={() => setInlineForm(prev => ({ ...prev, total: activeMasterOpt.lastNominal }))}
+                                          onClick={() => {
+                                            const nextTotal = activeMasterOpt.lastNominal;
+                                            setInlineForm(prev => ({
+                                              ...prev,
+                                              total: nextTotal,
+                                              subItems: Array.isArray(prev.subItems) && prev.subItems.length > 0
+                                                ? (normalizeSubItemsWithTotal(prev.subItems, nextTotal) || [])
+                                                : prev.subItems
+                                            }));
+                                          }}
                                           className="text-[10px] font-bold text-blue-800 bg-blue-100 hover:bg-blue-200 px-2 py-0.5 rounded border border-blue-300 transition cursor-pointer"
                                           title="Gunakan nominal pembayaran bulan sebelumnya"
                                         >
@@ -4198,7 +4633,16 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                                       {activeChildren.length <= 1 && Number(inlineForm.total) !== activeMasterOpt.sisa && (
                                         <button
                                           type="button"
-                                          onClick={() => setInlineForm(prev => ({ ...prev, total: activeMasterOpt.sisa }))}
+                                          onClick={() => {
+                                            const nextTotal = activeMasterOpt.sisa;
+                                            setInlineForm(prev => ({
+                                              ...prev,
+                                              total: nextTotal,
+                                              subItems: Array.isArray(prev.subItems) && prev.subItems.length > 0
+                                                ? (normalizeSubItemsWithTotal(prev.subItems, nextTotal) || [])
+                                                : prev.subItems
+                                            }));
+                                          }}
                                           className="text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300 transition cursor-pointer"
                                         >
                                           ⚡ Isi Sisa (Rp {activeMasterOpt.sisa.toLocaleString('id-ID')})
@@ -4254,7 +4698,16 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                                     type="text"
                                     placeholder="Total (Rp)"
                                     value={formatRupiah(inlineForm.total)}
-                                    onChange={(e) => setInlineForm({ ...inlineForm, total: parseRupiah(e.target.value) })}
+                                    onChange={(e) => {
+                                      const parsed = parseRupiah(e.target.value);
+                                      setInlineForm(prev => ({
+                                        ...prev,
+                                        total: parsed,
+                                        subItems: Array.isArray(prev.subItems) && prev.subItems.length > 0
+                                          ? (normalizeSubItemsWithTotal(prev.subItems, parsed) || [])
+                                          : prev.subItems
+                                      }));
+                                    }}
                                     className="w-full text-xs font-mono font-bold px-1.5 py-1.5 border border-amber-500 rounded bg-white text-right text-blue-900"
                                   />
                                 </td>
@@ -4558,18 +5011,38 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             </td>
                           </tr>
                         ) : (
-                          filteredBelanja.map((item, idx) => (
+                          filteredBelanja.map((item, idx) => {
+                            const effectiveSubs = Array.isArray(item.subItems) && item.subItems.length > 0
+                              ? (normalizeSubItemsWithTotal(item.subItems, item.total) || item.subItems)
+                              : [];
+                            const directSt = (!effectiveSubs.length && item.masterNo) ? masterBudgetFull[item.masterNo] : null;
+                            return (
                             <tr key={item.id} className="hover:bg-blue-50/50 transition border-b border-slate-300">
                               <td className="border border-slate-900 px-2 py-2.5 text-center font-bold">{idx + 1}</td>
                               <td className="border border-slate-900 px-3 py-2.5 font-semibold text-slate-900">
                                 <div>{item.belanja}</div>
-                                {Array.isArray(item.subItems) && item.subItems.length > 0 && (
+                                {effectiveSubs.length > 0 && (
                                   <div className="mt-1 flex flex-wrap gap-1">
-                                    {item.subItems.map(sub => (
-                                      <span key={sub.no} className="text-[10px] font-normal bg-blue-50 text-blue-900 border border-blue-200 px-1.5 py-0.5 rounded">
-                                        ✓ {sub.uraian} (Rp {Number(sub.jumlah || 0).toLocaleString('id-ID')})
-                                      </span>
-                                    ))}
+                                    {effectiveSubs.map(sub => {
+                                      const subSt = masterBudgetFull[sub.no];
+                                      return (
+                                        <span key={sub.no} className="text-[10px] font-normal bg-blue-50 text-blue-900 border border-blue-200 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                                          <span>✓ {sub.uraian} (Rp {Number(sub.jumlah || 0).toLocaleString('id-ID')})</span>
+                                          {subSt && subSt.sisa > 0 && (
+                                            <span className="font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1 rounded">
+                                              Sisa Anggaran: Rp {subSt.sisa.toLocaleString('id-ID')}
+                                            </span>
+                                          )}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {directSt && directSt.sisa > 0 && (
+                                  <div className="mt-1">
+                                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded inline-block">
+                                      ⏳ Sisa Anggaran RKAS: Rp {directSt.sisa.toLocaleString('id-ID')} (Pagu: Rp {directSt.pagu.toLocaleString('id-ID')})
+                                    </span>
                                   </div>
                                 )}
                               </td>
@@ -4584,11 +5057,12 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                               <td className="border border-slate-900 px-2 py-2.5 text-center font-mono text-slate-700">{item.tglTransaksiSI}</td>
                               
                               <td className="border border-slate-900 px-2 py-2 text-center no-print space-x-1">
-                                <button onClick={() => setInlineForm({ ...item, masterNo: item.masterNo || "", subItems: item.subItems || [] })} className="text-blue-600 hover:text-blue-800 font-bold px-1 cursor-pointer" title="Edit Baris Ini">✏️</button>
+                                <button onClick={() => setInlineForm({ ...item, masterNo: item.masterNo || "", subItems: effectiveSubs })} className="text-blue-600 hover:text-blue-800 font-bold px-1 cursor-pointer" title="Edit Baris Ini">✏️</button>
                                 <button onClick={() => handleDeleteBelanja(item.id)} className="text-red-600 hover:text-red-800 font-bold px-1 cursor-pointer" title="Hapus">❌</button>
                               </td>
                             </tr>
-                          ))
+                            );
+                          })
                         )}
 
                         <tr className="bg-slate-200 font-bold text-slate-900 border-t-2 border-slate-900">
@@ -4966,7 +5440,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         </thead>
                         <tbody>
                           {masterRkas.map((m) => {
-                            const st = masterBudgetFull[m.no];
+                            const st = masterYearBudgetFull[m.no];
                             const isPurchasedAuto = st ? st.isFull : purchasedUraianSet.has(String(m.no));
                             const isPurchasedManual = !!manualPurchasedMap[m.no];
                             const isPurchased = isPurchasedAuto || isPurchasedManual;
@@ -5067,9 +5541,8 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         </thead>
                         <tbody>
                           {masterRkas.map((m) => {
-                            const relBank = belanjaBankList
-                              .filter(b => b.belanja.toLowerCase().includes(m.uraian.toLowerCase().slice(0, 8)) || String(b.masterNo) === String(m.no))
-                              .reduce((s, b) => s + Number(b.total), 0);
+                            const stYear = masterYearBudgetFull[m.no];
+                            const relBank = stYear ? stYear.terpakai : 0;
                             const isPurchasedManual = !!manualPurchasedMap[m.no];
                             const rel = isPurchasedManual ? (relBank > 0 ? relBank : m.jumlah) : relBank;
                             const sisa = Math.max(0, m.jumlah - rel);
@@ -5204,7 +5677,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                     {/* RECIPIENT */}
                     <div className="text-xs space-y-0.5 mb-3">
                       <p>Kepada Yth,</p>
-                      <p className="font-bold">{headerInfo.namaBank || ""}</p>
+                      <p className="font-bold">{(!headerInfo.namaBank || headerInfo.namaBank.trim().toUpperCase() === "BJB") ? "Bank BJB Kantor Cabang Jatiasih" : headerInfo.namaBank}</p>
                       <p>di {headerInfo.kabupaten || "Tempat"}</p>
                     </div>
 
