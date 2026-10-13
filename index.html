@@ -225,6 +225,41 @@
       return 0;
     }
 
+    // HELPER FORMAT TANGGAL TEKS INDONESIA (misal: "12/10/2026" -> "12 Oktober 2026")
+    function formatTanggalIndoTeks(dateStr) {
+      if (!dateStr || typeof dateStr !== 'string') return "";
+      const s = dateStr.trim();
+      if (!s || s === "-") return "";
+      const slashParts = s.split('/');
+      if (slashParts.length === 3) {
+        const d = parseInt(slashParts[0], 10);
+        const m = parseInt(slashParts[1], 10);
+        const y = slashParts[2].trim();
+        if (!isNaN(d) && m >= 1 && m <= 12) {
+          return `${d} ${MONTHS[m - 1]} ${y}`;
+        }
+      }
+      const dashParts = s.split('-');
+      if (dashParts.length === 3) {
+        if (dashParts[0].length === 4) {
+          const y = dashParts[0].trim();
+          const m = parseInt(dashParts[1], 10);
+          const d = parseInt(dashParts[2], 10);
+          if (!isNaN(d) && m >= 1 && m <= 12) {
+            return `${d} ${MONTHS[m - 1]} ${y}`;
+          }
+        } else {
+          const d = parseInt(dashParts[0], 10);
+          const m = parseInt(dashParts[1], 10);
+          const y = dashParts[2].trim();
+          if (!isNaN(d) && m >= 1 && m <= 12) {
+            return `${d} ${MONTHS[m - 1]} ${y}`;
+          }
+        }
+      }
+      return s;
+    }
+
     // URL RESMI DATABASE CLOUD FIREBASE REALTIME SIBOS V1
     const SIBOS_FIREBASE_DB_URL = "https://sibos-54bcc-default-rtdb.asia-southeast1.firebasedatabase.app/";
     const SIBOS_OFFICIAL_GAS_URL = SIBOS_FIREBASE_DB_URL;
@@ -5092,7 +5127,13 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
                       {/* KEPALA SEKOLAH (KANAN) */}
                       <div className="text-center min-w-[220px]">
-                        <p className="font-normal text-slate-900">Bekasi, 28 September 2026</p>
+                        <p className="font-normal text-slate-900">
+                          Bekasi, {selectedBelanjaTglSI !== "Semua"
+                            ? formatTanggalIndoTeks(selectedBelanjaTglSI)
+                            : (filteredBelanja.length > 0 && filteredBelanja[filteredBelanja.length - 1].tglTransaksiSI && filteredBelanja[filteredBelanja.length - 1].tglTransaksiSI !== "-"
+                                ? formatTanggalIndoTeks(filteredBelanja[filteredBelanja.length - 1].tglTransaksiSI)
+                                : "28 September 2026")}
+                        </p>
                         <p className="font-normal text-slate-900 mt-0.5">Kepala {headerInfo.namaSekolah || "Sekolah"}</p>
                         <div className="h-20"></div>
                         <p className="font-bold text-slate-900">{headerInfo.kepalaSekolah}</p>
@@ -5266,7 +5307,13 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
                       {/* KEPALA SEKOLAH (KANAN) */}
                       <div className="text-center min-w-[220px]">
-                        <p className="font-normal text-slate-900">Bekasi, {selectedSiDate === "Semua" ? "28 September 2026" : selectedSiDate}</p>
+                        <p className="font-normal text-slate-900">
+                          Bekasi, {selectedSiDate === "Semua"
+                            ? (filteredSiList.length > 0 && filteredSiList[filteredSiList.length - 1].tglTransaksiSI && filteredSiList[filteredSiList.length - 1].tglTransaksiSI !== "-"
+                                ? formatTanggalIndoTeks(filteredSiList[filteredSiList.length - 1].tglTransaksiSI)
+                                : "28 September 2026")
+                            : formatTanggalIndoTeks(selectedSiDate)}
+                        </p>
                         <p className="font-normal text-slate-900 mt-0.5">Kepala {headerInfo.namaSekolah || "Sekolah"}</p>
                         <div className="h-20"></div>
                         <p className="font-bold text-slate-900">{headerInfo.kepalaSekolah}</p>
@@ -5684,7 +5731,13 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         </span>
                         <select
                           value={selectedSuratTransferDate}
-                          onChange={(e) => setSelectedSuratTransferDate(e.target.value)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSelectedSuratTransferDate(val);
+                            if (val && val !== "Semua") {
+                              setSuratTransferCetakDate(`${headerInfo.kabupaten || "Bekasi"}, ${formatTanggalIndoTeks(val)}`);
+                            }
+                          }}
                           className="font-bold border-2 border-blue-500 rounded-lg px-3 py-1.5 bg-white text-blue-900 focus:outline-none"
                         >
                           <option value="Semua">-- Semua Tanggal Transaksi --</option>
