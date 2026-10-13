@@ -5592,124 +5592,154 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                       totalMasterYearPagu = 246840000;
                     }
 
+                    const isSpecificMonth = selectedMonthView && selectedMonthView !== "Semua";
+                    const rekapMonthRows = isSpecificMonth ? (perBulanData[selectedMonthView] || []) : [];
                     const rekapTotalDanaTersedia = totalMasterYearPagu;
-                    const rekapTotalRencana = totalMasterYearPagu;
-                    const rekapTxList = belanjaBankList || [];
+                    const rekapTotalRencana = isSpecificMonth
+                      ? (rekapMonthRows.length > 0 ? calculatePerBulanTotal(rekapMonthRows) : totalMasterYearPagu)
+                      : totalMasterYearPagu;
+
+                    const rekapTxList = isSpecificMonth
+                      ? (belanjaBankList || []).filter(b => b && b.bulan === selectedMonthView)
+                      : (belanjaBankList || []);
+
                     const rekapTotalDibelanjakan = rekapTxList.reduce((s, b) => s + Number(b.total || 0), 0);
-                    const rekapTotalBelumDibelanjakan = Math.max(0, rekapTotalDanaTersedia - rekapTotalDibelanjakan);
-                    const rekapSisaSaldo = Math.max(0, rekapTotalDanaTersedia - rekapTotalDibelanjakan);
+                    const rekapTotalBelumDibelanjakan = Math.max(0, rekapTotalRencana - rekapTotalDibelanjakan);
+                    const rekapSisaSaldo = Math.max(0, rekapTotalRencana - rekapTotalDibelanjakan);
+                    const rekapLabel = selectedMonthView === "Semua" ? "SEMUA" : selectedMonthView.toUpperCase();
+
+                    const rekapTableStatusMap = isSpecificMonth
+                      ? computeBudgetStatusForSource(masterRkas, masterRkasHierarchy, rekapTxList, {}, null)
+                      : masterYearBudgetFull;
 
                     return (
-                      <div className="no-print grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {/* CARD 1: TOTAL DANA TERSEDIA (TOTAL PAGU MATI DARI ANGGARAN SDIT ANNISA) */}
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-purple-600">
-                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                            Total Dana Tersedia (SEMUA)
-                          </p>
-                          <p className="text-xl font-bold text-purple-700 font-mono mt-1">
-                            Rp {rekapTotalDanaTersedia.toLocaleString('id-ID')}
-                          </p>
-                          <p className="text-[11px] text-purple-600 mt-1 font-semibold flex items-center gap-1">
-                            <span>💰</span> Total Pagu Anggaran {headerInfo.namaSekolah || "SDIT ANNISA"}
-                          </p>
+                      <>
+                        <div className="no-print grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                          {/* CARD 1: TOTAL DANA TERSEDIA (TOTAL PAGU MATI DARI ANGGARAN SDIT ANNISA) */}
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-purple-600">
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                              Total Dana Tersedia ({rekapLabel})
+                            </p>
+                            <p className="text-xl font-bold text-purple-700 font-mono mt-1">
+                              Rp {rekapTotalDanaTersedia.toLocaleString('id-ID')}
+                            </p>
+                            <p className="text-[11px] text-purple-600 mt-1 font-semibold flex items-center gap-1">
+                              <span>💰</span> Total Pagu Anggaran {headerInfo.namaSekolah || "SDIT ANNISA"}
+                            </p>
+                          </div>
+
+                          {/* CARD 2: TOTAL SUDAH DIBELANJAKAN */}
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-emerald-600">
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                              Total Sudah Dibelanjakan ({rekapLabel})
+                            </p>
+                            <p className="text-xl font-bold text-emerald-700 font-mono mt-1">
+                              Rp {rekapTotalDibelanjakan.toLocaleString('id-ID')}
+                            </p>
+                            <p className="text-[11px] text-emerald-600 mt-1 font-semibold flex items-center gap-1">
+                              <span>✅</span> {rekapTxList.length} Transaksi Pembayaran Realized
+                            </p>
+                          </div>
+
+                          {/* CARD 3: TOTAL BELUM DIBELANJAKAN */}
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-amber-500">
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                              Total Belum Dibelanjakan ({rekapLabel})
+                            </p>
+                            <p className="text-xl font-bold text-amber-700 font-mono mt-1">
+                              Rp {rekapTotalBelumDibelanjakan.toLocaleString('id-ID')}
+                            </p>
+                            <p className="text-[11px] text-slate-400 mt-1 font-medium">
+                              Perhitungan Berbasis Rincian Belanja Perbulan
+                            </p>
+                          </div>
+
+                          {/* CARD 4: SISA SALDO ANGGARAN */}
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-blue-600">
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                              Sisa Saldo Anggaran ({rekapLabel})
+                            </p>
+                            <p className="text-xl font-bold text-blue-700 font-mono mt-1">
+                              Rp {rekapSisaSaldo.toLocaleString('id-ID')}
+                            </p>
+                            <p className="text-[11px] text-blue-600 mt-1 font-medium">
+                              Total Target Rencana: Rp {rekapTotalRencana.toLocaleString('id-ID')}
+                            </p>
+                          </div>
                         </div>
 
-                        {/* CARD 2: TOTAL SUDAH DIBELANJAKAN */}
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-emerald-600">
-                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                            Total Sudah Dibelanjakan (SEMUA)
-                          </p>
-                          <p className="text-xl font-bold text-emerald-700 font-mono mt-1">
-                            Rp {rekapTotalDibelanjakan.toLocaleString('id-ID')}
-                          </p>
-                          <p className="text-[11px] text-emerald-600 mt-1 font-semibold flex items-center gap-1">
-                            <span>✅</span> {rekapTxList.length} Transaksi Pembayaran Realized
-                          </p>
-                        </div>
+                        <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
+                          <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-2 border-b">
+                            <h3 className="text-base font-bold text-slate-900">
+                              Rekapitulasi Serapan Belanja vs Master RKAS PDF ({selectedMonthView === "Semua" ? "SEMUA" : selectedMonthView.toUpperCase()})
+                            </h3>
+                            <div className="no-print flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-700 uppercase">📅 Filter Periode:</span>
+                              <select
+                                value={selectedMonthView}
+                                onChange={(e) => setSelectedMonthView(e.target.value)}
+                                className="text-xs font-bold border-2 border-blue-500 rounded-lg px-3 py-1.5 bg-white text-blue-900 focus:outline-none cursor-pointer shadow-xs"
+                              >
+                                <option value="Semua">Semua Bulan (1 Tahun)</option>
+                                {MONTHS.map(m => (
+                                  <option key={m} value={m}>Bulan {m}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs text-left border-collapse border border-slate-300">
+                              <thead className="bg-slate-100 font-bold text-center">
+                                <tr>
+                                  <th className="border border-slate-300 px-2 py-2 w-10">No.</th>
+                                  <th className="border border-slate-300 px-2 py-2">Kode Rekening</th>
+                                  <th className="border border-slate-300 px-3 py-2 text-left">Uraian Master RKAS</th>
+                                  <th className="border border-slate-300 px-3 py-2 text-right">Pagu Target (Rp)</th>
+                                  <th className="border border-slate-300 px-3 py-2 text-right">Realisasi Belanja ({selectedMonthView})</th>
+                                  <th className="border border-slate-300 px-3 py-2 text-right">Sisa Pagu (Rp)</th>
+                                  <th className="border border-slate-300 px-2 py-2 text-center">Status</th>
+                                  <th className="border border-slate-300 px-3 py-2 text-left">Keterangan Catatan</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {masterRkas.map((m) => {
+                                  const stRow = rekapTableStatusMap[m.no];
+                                  const relBank = stRow ? stRow.terpakai : 0;
+                                  const isPurchasedManual = !isSpecificMonth && !!manualPurchasedMap[m.no];
+                                  const rel = isPurchasedManual ? (relBank > 0 ? relBank : m.jumlah) : relBank;
+                                  const sisa = Math.max(0, m.jumlah - rel);
+                                  const isPurchased = isPurchasedManual || relBank > 0;
 
-                        {/* CARD 3: TOTAL BELUM DIBELANJAKAN */}
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-amber-500">
-                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                            Total Belum Dibelanjakan (SEMUA)
-                          </p>
-                          <p className="text-xl font-bold text-amber-700 font-mono mt-1">
-                            Rp {rekapTotalBelumDibelanjakan.toLocaleString('id-ID')}
-                          </p>
-                          <p className="text-[11px] text-slate-400 mt-1 font-medium">
-                            Perhitungan Berbasis Rincian Belanja Perbulan
-                          </p>
+                                  return (
+                                    <tr key={m.no} className={`hover:bg-slate-50 ${isPurchased ? 'bg-yellow-100 font-bold' : ''}`}>
+                                      <td className="border border-slate-300 px-2 py-2 text-center font-mono">{m.no}</td>
+                                      <td className="border border-slate-300 px-2 py-2 font-mono text-slate-700">{m.kodeRekening}</td>
+                                      <td className="border border-slate-300 px-3 py-2 text-slate-900">{m.uraian}</td>
+                                      <td className="border border-slate-300 px-3 py-2 text-right font-mono font-semibold">{m.jumlah.toLocaleString('id-ID')}</td>
+                                      <td className="border border-slate-300 px-3 py-2 text-right font-mono font-bold text-emerald-700">{rel.toLocaleString('id-ID')}</td>
+                                      <td className="border border-slate-300 px-3 py-2 text-right font-mono font-semibold">{sisa.toLocaleString('id-ID')}</td>
+                                      <td className="border border-slate-300 px-2 py-2 text-center">
+                                        {isPurchased ? (
+                                          <span className="bg-yellow-300 text-yellow-950 font-bold text-[10px] px-2 py-0.5 rounded border border-yellow-500">
+                                            {isPurchasedManual && relBank === 0 ? "🟨 Dibelanjakan (Manual)" : "🟨 Dibelanjakan"}
+                                          </span>
+                                        ) : (
+                                          <span className="text-slate-400 text-[10px]">Belum</span>
+                                        )}
+                                      </td>
+                                      <td className="border border-slate-300 px-3 py-2 text-slate-700 italic font-normal">
+                                        {manualKeteranganTextMap[m.no] || "-"}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-
-                        {/* CARD 4: SISA SALDO ANGGARAN */}
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-blue-600">
-                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                            Sisa Saldo Anggaran (SEMUA)
-                          </p>
-                          <p className="text-xl font-bold text-blue-700 font-mono mt-1">
-                            Rp {rekapSisaSaldo.toLocaleString('id-ID')}
-                          </p>
-                          <p className="text-[11px] text-blue-600 mt-1 font-medium">
-                            Total Target Rencana: Rp {rekapTotalRencana.toLocaleString('id-ID')}
-                          </p>
-                        </div>
-                      </div>
+                      </>
                     );
                   })()}
-
-                  <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
-                    <h3 className="text-base font-bold text-slate-900 mb-4 pb-2 border-b">
-                      Rekapitulasi Serapan Belanja vs Master RKAS PDF (SEMUA)
-                    </h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs text-left border-collapse border border-slate-300">
-                        <thead className="bg-slate-100 font-bold text-center">
-                          <tr>
-                            <th className="border border-slate-300 px-2 py-2 w-10">No.</th>
-                            <th className="border border-slate-300 px-2 py-2">Kode Rekening</th>
-                            <th className="border border-slate-300 px-3 py-2 text-left">Uraian Master RKAS</th>
-                            <th className="border border-slate-300 px-3 py-2 text-right">Pagu Target (Rp)</th>
-                            <th className="border border-slate-300 px-3 py-2 text-right">Realisasi Belanja ({selectedMonthView})</th>
-                            <th className="border border-slate-300 px-3 py-2 text-right">Sisa Pagu (Rp)</th>
-                            <th className="border border-slate-300 px-2 py-2 text-center">Status</th>
-                            <th className="border border-slate-300 px-3 py-2 text-left">Keterangan Catatan</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {masterRkas.map((m) => {
-                            const stYear = masterYearBudgetFull[m.no];
-                            const relBank = stYear ? stYear.terpakai : 0;
-                            const isPurchasedManual = !!manualPurchasedMap[m.no];
-                            const rel = isPurchasedManual ? (relBank > 0 ? relBank : m.jumlah) : relBank;
-                            const sisa = Math.max(0, m.jumlah - rel);
-                            const isPurchased = isPurchasedManual || relBank > 0;
-
-                            return (
-                              <tr key={m.no} className={`hover:bg-slate-50 ${isPurchased ? 'bg-yellow-100 font-bold' : ''}`}>
-                                <td className="border border-slate-300 px-2 py-2 text-center font-mono">{m.no}</td>
-                                <td className="border border-slate-300 px-2 py-2 font-mono text-slate-700">{m.kodeRekening}</td>
-                                <td className="border border-slate-300 px-3 py-2 text-slate-900">{m.uraian}</td>
-                                <td className="border border-slate-300 px-3 py-2 text-right font-mono font-semibold">{m.jumlah.toLocaleString('id-ID')}</td>
-                                <td className="border border-slate-300 px-3 py-2 text-right font-mono font-bold text-emerald-700">{rel.toLocaleString('id-ID')}</td>
-                                <td className="border border-slate-300 px-3 py-2 text-right font-mono font-semibold">{sisa.toLocaleString('id-ID')}</td>
-                                <td className="border border-slate-300 px-2 py-2 text-center">
-                                  {isPurchased ? (
-                                    <span className="bg-yellow-300 text-yellow-950 font-bold text-[10px] px-2 py-0.5 rounded border border-yellow-500">
-                                      {isPurchasedManual && relBank === 0 ? "🟨 Dibelanjakan (Manual)" : "🟨 Dibelanjakan"}
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-400 text-[10px]">Belum</span>
-                                  )}
-                                </td>
-                                <td className="border border-slate-300 px-3 py-2 text-slate-700 italic font-normal">
-                                  {manualKeteranganTextMap[m.no] || "-"}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
                 </div>
               )}
 
