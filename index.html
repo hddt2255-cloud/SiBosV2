@@ -5030,17 +5030,17 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                     <table className="w-full text-xs border-collapse border border-slate-900">
                       <thead>
                         <tr className="bg-slate-200 text-slate-900 font-bold text-center border-b-2 border-slate-900">
-                          <th className="border border-slate-900 px-2 py-3 w-10 uppercase">NO</th>
-                          <th className="border border-slate-900 px-3 py-3 text-left uppercase">BELANJA</th>
-                          <th className="border border-slate-900 px-2 py-3 w-36 font-mono uppercase">NOMOR REKENING</th>
-                          <th className="border border-slate-900 px-2 py-3 w-20 uppercase">NAMA BANK</th>
-                          <th className="border border-slate-900 px-3 py-3 text-left uppercase">ATAS NAMA</th>
-                          <th className="border border-slate-900 px-3 py-3 w-32 font-mono uppercase">NPWP</th>
-                          <th className="border border-slate-900 px-3 py-3 text-right w-28 uppercase">TOTAL</th>
-                          <th className="border border-slate-900 px-2 py-3 w-24 uppercase">SUMBER DANA</th>
-                          <th className="border border-slate-900 px-2 py-3 w-28 uppercase">TGL TRANSAKSI SI</th>
+                          <th className="border border-slate-900 px-2 py-3 w-10 uppercase whitespace-nowrap">NO</th>
+                          <th className="border border-slate-900 px-3 py-3 text-left uppercase w-[34%] min-w-[260px]">BELANJA</th>
+                          <th className="border border-slate-900 px-2 py-3 w-28 font-mono uppercase whitespace-nowrap">NOMOR REKENING</th>
+                          <th className="border border-slate-900 px-2 py-3 w-20 uppercase whitespace-nowrap">NAMA BANK</th>
+                          <th className="border border-slate-900 px-3 py-3 text-left uppercase w-28 whitespace-nowrap">ATAS NAMA</th>
+                          <th className="border border-slate-900 px-2 py-3 w-28 font-mono uppercase whitespace-nowrap">NPWP</th>
+                          <th className="border border-slate-900 px-3 py-3 text-right w-28 uppercase whitespace-nowrap">TOTAL</th>
+                          <th className="border border-slate-900 px-2 py-3 w-24 uppercase whitespace-nowrap">SUMBER DANA</th>
+                          <th className="border border-slate-900 px-2 py-3 w-28 uppercase whitespace-nowrap">TGL TRANSAKSI SI</th>
                           
-                          <th className="border border-slate-900 px-2 py-3 w-24 no-print uppercase">AKSI</th>
+                          <th className="border border-slate-900 px-2 py-3 w-20 no-print uppercase whitespace-nowrap">AKSI</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -5058,7 +5058,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             const directSt = (!effectiveSubs.length && item.masterNo) ? masterBudgetFull[item.masterNo] : null;
                             return (
                             <tr key={item.id} className="hover:bg-blue-50/50 transition border-b border-slate-300">
-                              <td className="border border-slate-900 px-2 py-2.5 text-center font-bold">{idx + 1}</td>
+                              <td className="border border-slate-900 px-2 py-2.5 text-center font-bold whitespace-nowrap">{idx + 1}</td>
                               <td className="border border-slate-900 px-3 py-2.5 font-semibold text-slate-900">
                                 <div>{item.belanja}</div>
                                 {effectiveSubs.length > 0 && (
@@ -5086,17 +5086,17 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                                   </div>
                                 )}
                               </td>
-                              <td className="border border-slate-900 px-2 py-2.5 text-center font-mono text-slate-800">{item.noRek}</td>
-                              <td className="border border-slate-900 px-2 py-2.5 text-center font-bold text-slate-800">{item.namaBank}</td>
+                              <td className="border border-slate-900 px-2 py-2.5 text-center font-mono text-slate-800 whitespace-nowrap">{item.noRek}</td>
+                              <td className="border border-slate-900 px-2 py-2.5 text-center font-bold text-slate-800 whitespace-nowrap">{item.namaBank}</td>
                               <td className="border border-slate-900 px-3 py-2.5 font-medium text-slate-800">{item.atasNama}</td>
-                              <td className="border border-slate-900 px-3 py-2.5 font-mono text-center text-slate-700">{item.npwp}</td>
-                              <td className="border border-slate-900 px-3 py-2.5 text-right font-mono font-bold text-slate-900">
+                              <td className="border border-slate-900 px-2 py-2.5 font-mono text-center text-slate-700 whitespace-nowrap">{item.npwp}</td>
+                              <td className="border border-slate-900 px-3 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
                                 {Number(item.total).toLocaleString('id-ID')}
                               </td>
-                              <td className="border border-slate-900 px-2 py-2.5 text-center font-medium">{item.sumberDana}</td>
-                              <td className="border border-slate-900 px-2 py-2.5 text-center font-mono text-slate-700">{item.tglTransaksiSI}</td>
+                              <td className="border border-slate-900 px-2 py-2.5 text-center font-medium whitespace-nowrap">{item.sumberDana}</td>
+                              <td className="border border-slate-900 px-2 py-2.5 text-center font-mono text-slate-700 whitespace-nowrap">{item.tglTransaksiSI}</td>
                               
-                              <td className="border border-slate-900 px-2 py-2 text-center no-print space-x-1">
+                              <td className="border border-slate-900 px-2 py-2 text-center no-print space-x-1 whitespace-nowrap">
                                 <button onClick={() => setInlineForm({ ...item, masterNo: item.masterNo || "", subItems: effectiveSubs })} className="text-blue-600 hover:text-blue-800 font-bold px-1 cursor-pointer" title="Edit Baris Ini">✏️</button>
                                 <button onClick={() => handleDeleteBelanja(item.id)} className="text-red-600 hover:text-red-800 font-bold px-1 cursor-pointer" title="Hapus">❌</button>
                               </td>
@@ -5106,10 +5106,10 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         )}
 
                         <tr className="bg-slate-200 font-bold text-slate-900 border-t-2 border-slate-900">
-                          <td colSpan="6" className="border border-slate-900 px-3 py-3 text-right uppercase">
-                            TOTAL BELANJA {selectedMonthView === "Semua" ? "SELURUH TRANSAKSI" : `BULAN ${selectedMonthView.toUpperCase()}`}
+                          <td colSpan="6" className="border border-slate-900 px-3 py-3 text-left">
+                            Jumlah Total
                           </td>
-                          <td className="border border-slate-900 px-3 py-3 text-right font-mono text-sm">
+                          <td className="border border-slate-900 px-3 py-3 text-right font-mono text-sm whitespace-nowrap">
                             Rp {totalBelanjaFiltered.toLocaleString('id-ID')}
                           </td>
                           <td colSpan="2" className="border border-slate-900 px-2 py-3"></td>
@@ -5251,15 +5251,15 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                       <table className="w-full text-xs border-collapse border border-slate-900 si-print-table bg-white">
                         <thead>
                           <tr className="bg-white text-slate-900 font-bold text-center border-b-2 border-slate-900">
-                            <th className="border border-slate-900 px-2 py-3 w-12 uppercase">NO</th>
-                            <th className="border border-slate-900 px-3 py-3 text-left uppercase">BELANJA</th>
-                            <th className="border border-slate-900 px-2 py-3 w-40 font-mono uppercase">NOMOR REKENING</th>
-                            <th className="border border-slate-900 px-2 py-3 w-24 uppercase">NAMA BANK</th>
-                            <th className="border border-slate-900 px-3 py-3 text-left uppercase">ATAS NAMA</th>
-                            <th className="border border-slate-900 px-3 py-3 w-36 font-mono uppercase">NPWP</th>
-                            <th className="border border-slate-900 px-3 py-3 text-right w-32 uppercase">TOTAL</th>
-                            <th className="border border-slate-900 px-2 py-3 w-28 uppercase">SUMBER DANA</th>
-                            <th className="border border-slate-900 px-2 py-3 w-28 uppercase">TGL TRANSAKSI SI</th>
+                            <th className="border border-slate-900 px-2 py-3 w-10 uppercase whitespace-nowrap">NO</th>
+                            <th className="border border-slate-900 px-3 py-3 text-left uppercase w-[36%] min-w-[280px]">BELANJA</th>
+                            <th className="border border-slate-900 px-2 py-3 w-28 font-mono uppercase whitespace-nowrap">NOMOR REKENING</th>
+                            <th className="border border-slate-900 px-2 py-3 w-20 uppercase whitespace-nowrap">NAMA BANK</th>
+                            <th className="border border-slate-900 px-3 py-3 text-left uppercase w-28 whitespace-nowrap">ATAS NAMA</th>
+                            <th className="border border-slate-900 px-2 py-3 w-28 font-mono uppercase whitespace-nowrap">NPWP</th>
+                            <th className="border border-slate-900 px-3 py-3 text-right w-28 uppercase whitespace-nowrap">TOTAL</th>
+                            <th className="border border-slate-900 px-2 py-3 w-24 uppercase whitespace-nowrap">SUMBER DANA</th>
+                            <th className="border border-slate-900 px-2 py-3 w-28 uppercase whitespace-nowrap">TGL TRANSAKSI SI</th>
                             
                           </tr>
                         </thead>
@@ -5273,17 +5273,17 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                           ) : (
                             filteredSiList.map((item, idx) => (
                               <tr key={item.id} className="bg-white border-b border-slate-400">
-                                <td className="border border-slate-900 px-2 py-2.5 text-center font-bold">{idx + 1}</td>
+                                <td className="border border-slate-900 px-2 py-2.5 text-center font-bold whitespace-nowrap">{idx + 1}</td>
                                 <td className="border border-slate-900 px-3 py-2.5 font-semibold text-slate-900">{item.belanja}</td>
-                                <td className="border border-slate-900 px-2 py-2.5 text-center font-mono text-slate-800">{item.noRek}</td>
-                                <td className="border border-slate-900 px-2 py-2.5 text-center font-bold text-slate-800">{item.namaBank}</td>
+                                <td className="border border-slate-900 px-2 py-2.5 text-center font-mono text-slate-800 whitespace-nowrap">{item.noRek}</td>
+                                <td className="border border-slate-900 px-2 py-2.5 text-center font-bold text-slate-800 whitespace-nowrap">{item.namaBank}</td>
                                 <td className="border border-slate-900 px-3 py-2.5 font-medium text-slate-800">{item.atasNama}</td>
-                                <td className="border border-slate-900 px-3 py-2.5 font-mono text-center text-slate-700">{item.npwp}</td>
-                                <td className="border border-slate-900 px-3 py-2.5 text-right font-mono font-bold text-slate-900">
+                                <td className="border border-slate-900 px-2 py-2.5 font-mono text-center text-slate-700 whitespace-nowrap">{item.npwp}</td>
+                                <td className="border border-slate-900 px-3 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
                                   {Number(item.total).toLocaleString('id-ID')}
                                 </td>
-                                <td className="border border-slate-900 px-2 py-2.5 text-center font-medium">{item.sumberDana}</td>
-                                <td className="border border-slate-900 px-2 py-2.5 text-center font-mono text-slate-700">{item.tglTransaksiSI}</td>
+                                <td className="border border-slate-900 px-2 py-2.5 text-center font-medium whitespace-nowrap">{item.sumberDana}</td>
+                                <td className="border border-slate-900 px-2 py-2.5 text-center font-mono text-slate-700 whitespace-nowrap">{item.tglTransaksiSI}</td>
                                 
                               </tr>
                             ))
@@ -5294,7 +5294,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                             <td colSpan="6" className="border border-slate-900 px-3 py-3 text-left">
                               Jumlah Total
                             </td>
-                            <td className="border border-slate-900 px-3 py-3 text-right font-mono text-sm">
+                            <td className="border border-slate-900 px-3 py-3 text-right font-mono text-sm whitespace-nowrap">
                               Rp {totalSiFiltered.toLocaleString('id-ID')}
                             </td>
                             <td colSpan="2" className="border border-slate-900 px-2 py-3"></td>
