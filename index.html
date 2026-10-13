@@ -3146,6 +3146,10 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
           [`TAHUN ANGGARAN : ${headerInfo.tahunAnggaran}`],
           [`TANGGAL SI : ${selectedSiDate}`],
           [""],
+          ["Nama Sekolah", `: ${headerInfo.namaSekolah || ""}`, "", "", "", "", "Sumber Dana", `: ${headerInfo.sumberDana || ""}`],
+          ["NPSN", `: ${headerInfo.npsn || ""}`, "", "", "", "", "Kabupaten/Kota", `: ${headerInfo.kabupaten || ""}`],
+          ["Alamat", `: ${headerInfo.alamat || ""}`, "", "", "", "", "Provinsi", `: ${headerInfo.provinsi || ""}`],
+          [""],
           ["NO", "BELANJA", "NOMOR REKENING", "NAMA BANK", "ATAS NAMA", "NPWP", "TOTAL", "SUMBER DANA", "TGL TRANSAKSI SI"]
         ];
         filteredSiList.forEach((item, idx) => {
@@ -4941,7 +4945,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                     {/* CARD 1: TOTAL SUDAH DIBELANJAKAN */}
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-emerald-600">
                       <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                        Total Sudah Dibelanjakan ({selectedMonthView})
+                        Total Sudah Dibelanjakan ({effectiveBudgetMonth || selectedMonthView})
                       </p>
                       <p className="text-xl font-bold text-emerald-700 font-mono mt-1">
                         Rp {statsPerBulan.totalDibelanjakan.toLocaleString('id-ID')}
@@ -4954,7 +4958,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                     {/* CARD 2: BELUM DIBELANJAKAN */}
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-amber-500">
                       <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                        Total Belum Dibelanjakan ({selectedMonthView})
+                        Total Belum Dibelanjakan ({effectiveBudgetMonth || selectedMonthView})
                       </p>
                       <p className="text-xl font-bold text-amber-700 font-mono mt-1">
                         Rp {statsPerBulan.totalBelumDibelanjakan.toLocaleString('id-ID')}
@@ -4967,7 +4971,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                     {/* CARD 3: SALDO ANGGARAN */}
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-blue-600">
                       <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                        Sisa Saldo Anggaran ({selectedMonthView})
+                        Sisa Saldo Anggaran ({effectiveBudgetMonth || selectedMonthView})
                       </p>
                       <p className="text-xl font-bold text-blue-700 font-mono mt-1">
                         Rp {statsPerBulan.saldo.toLocaleString('id-ID')}
@@ -5181,16 +5185,16 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-medium text-slate-900 mb-6">
-                      <div>
-                        <p><span className="w-28 inline-block font-semibold">Nama Sekolah</span>: <strong>{headerInfo.namaSekolah}</strong></p>
-                        <p><span className="w-28 inline-block font-semibold">NPSN</span>: {headerInfo.npsn}</p>
-                        <p><span className="w-28 inline-block font-semibold">Alamat</span>: {headerInfo.alamat}</p>
+                    <div className="flex flex-row justify-between items-start gap-6 text-xs font-medium text-slate-900 mb-6">
+                      <div className="text-left space-y-0.5">
+                        <p className="flex items-baseline"><span className="w-32 inline-block font-semibold shrink-0">Nama Sekolah</span><span>: <strong>{headerInfo.namaSekolah}</strong></span></p>
+                        <p className="flex items-baseline"><span className="w-32 inline-block font-semibold shrink-0">NPSN</span><span>: {headerInfo.npsn}</span></p>
+                        <p className="flex items-baseline"><span className="w-32 inline-block font-semibold shrink-0">Alamat</span><span>: {headerInfo.alamat}</span></p>
                       </div>
-                      <div className="md:text-right">
-                        <p><span className="w-28 inline-block font-semibold">Sumber Dana</span>: <strong>{headerInfo.sumberDana}</strong></p>
-                        <p><span className="w-28 inline-block font-semibold">Kabupaten/Kota</span>: {headerInfo.kabupaten}</p>
-                        <p><span className="w-28 inline-block font-semibold">Provinsi</span>: {headerInfo.provinsi}</p>
+                      <div className="text-left space-y-0.5 min-w-[230px]">
+                        <p className="flex items-baseline"><span className="w-32 inline-block font-semibold shrink-0">Sumber Dana</span><span>: <strong>{headerInfo.sumberDana}</strong></span></p>
+                        <p className="flex items-baseline"><span className="w-32 inline-block font-semibold shrink-0">Kabupaten/Kota</span><span>: {headerInfo.kabupaten}</span></p>
+                        <p className="flex items-baseline"><span className="w-32 inline-block font-semibold shrink-0">Provinsi</span><span>: {headerInfo.provinsi}</span></p>
                       </div>
                     </div>
 
@@ -5521,10 +5525,113 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
               {/* VIEW 4: REKAP SERAPAN */}
               {currentView === "rekap" && (
                 <div className="space-y-6">
+                  {(() => {
+                    // Hitung Total Pagu 1 Tahun dari Master RKAS
+                    let totalMasterYearPagu = 0;
+                    if (Array.isArray(masterRkas) && masterRkas.length > 0) {
+                      const stdRows = masterRkas.filter(m => m.level === "standar");
+                      if (stdRows.length > 0) {
+                        totalMasterYearPagu = stdRows.reduce((s, m) => s + Number(m.jumlah || 0), 0);
+                      } else {
+                        const leafRows = masterRkas.filter(m => m.level === "item" && /^\d{3}\./.test((m.uraian || "").trim()));
+                        totalMasterYearPagu = (leafRows.length > 0 ? leafRows : masterRkas).reduce((s, m) => s + Number(m.jumlah || 0), 0);
+                      }
+                    }
+
+                    const isSpecificMonth = selectedMonthView && selectedMonthView !== "Semua";
+                    const rekapMonthRows = isSpecificMonth ? (perBulanData[selectedMonthView] || []) : [];
+                    const rekapTotalRencana = isSpecificMonth
+                      ? (rekapMonthRows.length > 0 ? calculatePerBulanTotal(rekapMonthRows) : totalMasterYearPagu)
+                      : totalMasterYearPagu;
+
+                    const rekapTxList = isSpecificMonth
+                      ? (belanjaBankList || []).filter(b => b && b.bulan === selectedMonthView)
+                      : (belanjaBankList || []);
+
+                    const rekapTotalDibelanjakan = rekapTxList.reduce((s, b) => s + Number(b.total || 0), 0);
+                    const rekapTotalBelumDibelanjakan = Math.max(0, rekapTotalRencana - rekapTotalDibelanjakan);
+
+                    const totalKreditBank = Number(saldoAwal || 0) + (danaMasukList || []).reduce((s, x) => s + Number(x.kredit || 0), 0);
+                    const rekapTotalDanaTersedia = totalKreditBank > 0 ? totalKreditBank : rekapTotalRencana;
+                    const rekapSisaSaldo = Math.max(0, rekapTotalDanaTersedia - rekapTotalDibelanjakan);
+                    const rekapLabel = selectedMonthView === "Semua" ? "SEMUA" : selectedMonthView.toUpperCase();
+
+                    return (
+                      <div className="no-print grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* CARD 1: TOTAL DANA TERSEDIA */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-purple-600">
+                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                            Total Dana Tersedia ({rekapLabel})
+                          </p>
+                          <p className="text-xl font-bold text-purple-700 font-mono mt-1">
+                            Rp {rekapTotalDanaTersedia.toLocaleString('id-ID')}
+                          </p>
+                          <p className="text-[11px] text-purple-600 mt-1 font-semibold flex items-center gap-1">
+                            <span>💰</span> {totalKreditBank > 0 ? "Saldo Awal + Dana Masuk Bank" : `Total Pagu Anggaran (${selectedMonthView})`}
+                          </p>
+                        </div>
+
+                        {/* CARD 2: TOTAL SUDAH DIBELANJAKAN */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-emerald-600">
+                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                            Total Sudah Dibelanjakan ({rekapLabel})
+                          </p>
+                          <p className="text-xl font-bold text-emerald-700 font-mono mt-1">
+                            Rp {rekapTotalDibelanjakan.toLocaleString('id-ID')}
+                          </p>
+                          <p className="text-[11px] text-emerald-600 mt-1 font-semibold flex items-center gap-1">
+                            <span>✅</span> {rekapTxList.length} Transaksi Pembayaran Realized
+                          </p>
+                        </div>
+
+                        {/* CARD 3: TOTAL BELUM DIBELANJAKAN */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-amber-500">
+                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                            Total Belum Dibelanjakan ({rekapLabel})
+                          </p>
+                          <p className="text-xl font-bold text-amber-700 font-mono mt-1">
+                            Rp {rekapTotalBelumDibelanjakan.toLocaleString('id-ID')}
+                          </p>
+                          <p className="text-[11px] text-slate-400 mt-1 font-medium">
+                            Perhitungan Berbasis Rincian Belanja Perbulan
+                          </p>
+                        </div>
+
+                        {/* CARD 4: SISA SALDO ANGGARAN */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-blue-600">
+                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                            Sisa Saldo Anggaran ({rekapLabel})
+                          </p>
+                          <p className="text-xl font-bold text-blue-700 font-mono mt-1">
+                            Rp {rekapSisaSaldo.toLocaleString('id-ID')}
+                          </p>
+                          <p className="text-[11px] text-blue-600 mt-1 font-medium">
+                            Total Target Rencana: Rp {rekapTotalRencana.toLocaleString('id-ID')}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
-                    <h3 className="text-base font-bold text-slate-900 mb-4 pb-2 border-b">
-                      Rekapitulasi Serapan Belanja vs Master RKAS PDF ({selectedMonthView})
-                    </h3>
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-2 border-b">
+                      <h3 className="text-base font-bold text-slate-900">
+                        Rekapitulasi Serapan Belanja vs Master RKAS PDF ({selectedMonthView})
+                      </h3>
+                      <div className="no-print flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-700 uppercase">📅 Filter Periode:</span>
+                        <select
+                          value={selectedMonthView}
+                          onChange={(e) => setSelectedMonthView(e.target.value)}
+                          className="text-xs font-bold border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:outline-none"
+                        >
+                          <option value="Semua">Semua Bulan (1 Tahun)</option>
+                          {MONTHS.map(m => (
+                            <option key={m} value={m}>Bulan {m}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs text-left border-collapse border border-slate-300">
                         <thead className="bg-slate-100 font-bold text-center">
