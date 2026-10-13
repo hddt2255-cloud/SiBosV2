@@ -70,15 +70,16 @@
         size: A4 landscape;
         margin: 6mm 8mm;
       }
-      body {
+      html, body, #root {
+        background: #ffffff !important;
         background-color: #ffffff !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
       }
       .no-print { display: none !important; }
       .sidebar-fixed { display: none !important; }
-      .main-content { margin-left: 0 !important; padding: 0 !important; width: 100% !important; }
-      .print-container { padding: 0 !important; margin: 0 !important; box-shadow: none !important; border: none !important; width: 100% !important; max-width: 100% !important; }
+      .main-content { margin-left: 0 !important; padding: 0 !important; width: 100% !important; background: #ffffff !important; background-color: #ffffff !important; }
+      .print-container { padding: 0 !important; margin: 0 !important; box-shadow: none !important; border: none !important; width: 100% !important; max-width: 100% !important; background: #ffffff !important; background-color: #ffffff !important; }
       .overflow-x-auto { overflow: visible !important; }
       table { border-collapse: collapse !important; width: 100% !important; page-break-inside: auto; }
       tr { page-break-inside: avoid; page-break-after: auto; }
@@ -3190,7 +3191,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
         filteredSiList.forEach((item, idx) => {
           rows.push([idx + 1, item.belanja, item.noRek, item.namaBank, item.atasNama, item.npwp, item.total, item.sumberDana, item.tglTransaksiSI]);
         });
-        rows.push(["", "TOTAL STANDING INSTRUCTION", "", "", "", "", totalSiFiltered, "", "", ""]);
+        rows.push(["Jumlah Total", "", "", "", "", "", totalSiFiltered, "", "", ""]);
 
         const ws = XLSX.utils.aoa_to_sheet(rows);
         const wb = XLSX.utils.book_new();
@@ -5153,6 +5154,12 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         size: A4 landscape !important;
                         margin: 6mm 8mm !important;
                       }
+                      html, body, #root, .main-content, .print-container,
+                      .si-print-table, .si-print-table thead, .si-print-table tbody,
+                      .si-print-table tr, .si-print-table th, .si-print-table td {
+                        background: #ffffff !important;
+                        background-color: #ffffff !important;
+                      }
                       .si-print-table th, .si-print-table td {
                         font-size: 10px !important;
                         padding: 3.5px 5px !important;
@@ -5241,9 +5248,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
                     {/* TABEL PENCETAKAN STANDING INSTRUCTION (PERSIS SAMA DENGAN DOKUMEN EXCEL) */}
                     <div className="overflow-x-auto mb-8">
-                      <table className="w-full text-xs border-collapse border border-slate-900 si-print-table">
+                      <table className="w-full text-xs border-collapse border border-slate-900 si-print-table bg-white">
                         <thead>
-                          <tr className="bg-slate-200 text-slate-900 font-bold text-center border-b-2 border-slate-900">
+                          <tr className="bg-white text-slate-900 font-bold text-center border-b-2 border-slate-900">
                             <th className="border border-slate-900 px-2 py-3 w-12 uppercase">NO</th>
                             <th className="border border-slate-900 px-3 py-3 text-left uppercase">BELANJA</th>
                             <th className="border border-slate-900 px-2 py-3 w-40 font-mono uppercase">NOMOR REKENING</th>
@@ -5259,13 +5266,13 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         <tbody>
                           {filteredSiList.length === 0 ? (
                             <tr>
-                              <td colSpan="10" className="border border-slate-900 px-4 py-8 text-center text-slate-500 italic bg-slate-50">
+                              <td colSpan="10" className="border border-slate-900 px-4 py-8 text-center text-slate-500 italic bg-white">
                                 Tidak ada data Standing Instruction untuk tanggal/bulan yang dipilih.
                               </td>
                             </tr>
                           ) : (
                             filteredSiList.map((item, idx) => (
-                              <tr key={item.id} className="border-b border-slate-400">
+                              <tr key={item.id} className="bg-white border-b border-slate-400">
                                 <td className="border border-slate-900 px-2 py-2.5 text-center font-bold">{idx + 1}</td>
                                 <td className="border border-slate-900 px-3 py-2.5 font-semibold text-slate-900">{item.belanja}</td>
                                 <td className="border border-slate-900 px-2 py-2.5 text-center font-mono text-slate-800">{item.noRek}</td>
@@ -5283,9 +5290,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                           )}
 
                           {/* TOTAL ROW */}
-                          <tr className="bg-slate-200 font-bold text-slate-900 border-t-2 border-slate-900">
-                            <td colSpan="6" className="border border-slate-900 px-3 py-3 text-right uppercase">
-                              JUMLAH STANDING INSTRUCTION
+                          <tr className="bg-white font-bold text-slate-900 border-t-2 border-slate-900">
+                            <td colSpan="6" className="border border-slate-900 px-3 py-3 text-left">
+                              Jumlah Total
                             </td>
                             <td className="border border-slate-900 px-3 py-3 text-right font-mono text-sm">
                               Rp {totalSiFiltered.toLocaleString('id-ID')}
