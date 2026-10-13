@@ -5526,7 +5526,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
               {currentView === "rekap" && (
                 <div className="space-y-6">
                   {(() => {
-                    // Hitung Total Pagu 1 Tahun dari Master RKAS
+                    // Angka Total Pagu / Total Dana Tersedia diambil tetap dari jumlah total anggaran Master RKAS SDIT ANNISA (Rp 246.840.000)
                     let totalMasterYearPagu = 0;
                     if (Array.isArray(masterRkas) && masterRkas.length > 0) {
                       const stdRows = masterRkas.filter(m => m.level === "standar");
@@ -5537,44 +5537,36 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         totalMasterYearPagu = (leafRows.length > 0 ? leafRows : masterRkas).reduce((s, m) => s + Number(m.jumlah || 0), 0);
                       }
                     }
+                    if (!totalMasterYearPagu || totalMasterYearPagu <= 0) {
+                      totalMasterYearPagu = 246840000;
+                    }
 
-                    const isSpecificMonth = selectedMonthView && selectedMonthView !== "Semua";
-                    const rekapMonthRows = isSpecificMonth ? (perBulanData[selectedMonthView] || []) : [];
-                    const rekapTotalRencana = isSpecificMonth
-                      ? (rekapMonthRows.length > 0 ? calculatePerBulanTotal(rekapMonthRows) : totalMasterYearPagu)
-                      : totalMasterYearPagu;
-
-                    const rekapTxList = isSpecificMonth
-                      ? (belanjaBankList || []).filter(b => b && b.bulan === selectedMonthView)
-                      : (belanjaBankList || []);
-
+                    const rekapTotalDanaTersedia = totalMasterYearPagu;
+                    const rekapTotalRencana = totalMasterYearPagu;
+                    const rekapTxList = belanjaBankList || [];
                     const rekapTotalDibelanjakan = rekapTxList.reduce((s, b) => s + Number(b.total || 0), 0);
-                    const rekapTotalBelumDibelanjakan = Math.max(0, rekapTotalRencana - rekapTotalDibelanjakan);
-
-                    const totalKreditBank = Number(saldoAwal || 0) + (danaMasukList || []).reduce((s, x) => s + Number(x.kredit || 0), 0);
-                    const rekapTotalDanaTersedia = totalKreditBank > 0 ? totalKreditBank : rekapTotalRencana;
+                    const rekapTotalBelumDibelanjakan = Math.max(0, rekapTotalDanaTersedia - rekapTotalDibelanjakan);
                     const rekapSisaSaldo = Math.max(0, rekapTotalDanaTersedia - rekapTotalDibelanjakan);
-                    const rekapLabel = selectedMonthView === "Semua" ? "SEMUA" : selectedMonthView.toUpperCase();
 
                     return (
                       <div className="no-print grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {/* CARD 1: TOTAL DANA TERSEDIA */}
+                        {/* CARD 1: TOTAL DANA TERSEDIA (TOTAL PAGU MATI DARI ANGGARAN SDIT ANNISA) */}
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-purple-600">
                           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                            Total Dana Tersedia ({rekapLabel})
+                            Total Dana Tersedia (SEMUA)
                           </p>
                           <p className="text-xl font-bold text-purple-700 font-mono mt-1">
                             Rp {rekapTotalDanaTersedia.toLocaleString('id-ID')}
                           </p>
                           <p className="text-[11px] text-purple-600 mt-1 font-semibold flex items-center gap-1">
-                            <span>💰</span> {totalKreditBank > 0 ? "Saldo Awal + Dana Masuk Bank" : `Total Pagu Anggaran (${selectedMonthView})`}
+                            <span>💰</span> Total Pagu Anggaran {headerInfo.namaSekolah || "SDIT ANNISA"}
                           </p>
                         </div>
 
                         {/* CARD 2: TOTAL SUDAH DIBELANJAKAN */}
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-emerald-600">
                           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                            Total Sudah Dibelanjakan ({rekapLabel})
+                            Total Sudah Dibelanjakan (SEMUA)
                           </p>
                           <p className="text-xl font-bold text-emerald-700 font-mono mt-1">
                             Rp {rekapTotalDibelanjakan.toLocaleString('id-ID')}
@@ -5587,7 +5579,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         {/* CARD 3: TOTAL BELUM DIBELANJAKAN */}
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-amber-500">
                           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                            Total Belum Dibelanjakan ({rekapLabel})
+                            Total Belum Dibelanjakan (SEMUA)
                           </p>
                           <p className="text-xl font-bold text-amber-700 font-mono mt-1">
                             Rp {rekapTotalBelumDibelanjakan.toLocaleString('id-ID')}
@@ -5600,7 +5592,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                         {/* CARD 4: SISA SALDO ANGGARAN */}
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-blue-600">
                           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                            Sisa Saldo Anggaran ({rekapLabel})
+                            Sisa Saldo Anggaran (SEMUA)
                           </p>
                           <p className="text-xl font-bold text-blue-700 font-mono mt-1">
                             Rp {rekapSisaSaldo.toLocaleString('id-ID')}
@@ -5614,24 +5606,9 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                   })()}
 
                   <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
-                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-2 border-b">
-                      <h3 className="text-base font-bold text-slate-900">
-                        Rekapitulasi Serapan Belanja vs Master RKAS PDF ({selectedMonthView})
-                      </h3>
-                      <div className="no-print flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-700 uppercase">📅 Filter Periode:</span>
-                        <select
-                          value={selectedMonthView}
-                          onChange={(e) => setSelectedMonthView(e.target.value)}
-                          className="text-xs font-bold border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:outline-none"
-                        >
-                          <option value="Semua">Semua Bulan (1 Tahun)</option>
-                          {MONTHS.map(m => (
-                            <option key={m} value={m}>Bulan {m}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
+                    <h3 className="text-base font-bold text-slate-900 mb-4 pb-2 border-b">
+                      Rekapitulasi Serapan Belanja vs Master RKAS PDF (SEMUA)
+                    </h3>
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs text-left border-collapse border border-slate-300">
                         <thead className="bg-slate-100 font-bold text-center">
