@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>SiBOS V1 - Aplikasi Pengelolaan Dana BOS & Belanja SI</title>
   <link rel="icon" type="image/png" href="sibos_icon.png">
   <link rel="apple-touch-icon" href="sibos_icon.png">
@@ -5594,10 +5597,10 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
 
                     const isSpecificMonth = selectedMonthView && selectedMonthView !== "Semua";
                     const rekapMonthRows = isSpecificMonth ? (perBulanData[selectedMonthView] || []) : [];
-                    const rekapTotalDanaTersedia = totalMasterYearPagu;
                     const rekapTotalRencana = isSpecificMonth
-                      ? (rekapMonthRows.length > 0 ? calculatePerBulanTotal(rekapMonthRows) : totalMasterYearPagu)
+                      ? (rekapMonthRows.length > 0 ? calculatePerBulanTotal(rekapMonthRows) : 0)
                       : totalMasterYearPagu;
+                    const rekapTotalDanaTersedia = isSpecificMonth ? rekapTotalRencana : totalMasterYearPagu;
 
                     const rekapTxList = isSpecificMonth
                       ? (belanjaBankList || []).filter(b => b && b.bulan === selectedMonthView)
@@ -5615,7 +5618,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                     return (
                       <>
                         <div className="no-print grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                          {/* CARD 1: TOTAL DANA TERSEDIA (TOTAL PAGU MATI DARI ANGGARAN SDIT ANNISA) */}
+                          {/* CARD 1: TOTAL DANA TERSEDIA */}
                           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-purple-600">
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
                               Total Dana Tersedia ({rekapLabel})
@@ -5624,7 +5627,7 @@ function SiBosMainApp({ currentUser, onLogout, onUpdateAccountInfo, onUpdatePass
                               Rp {rekapTotalDanaTersedia.toLocaleString('id-ID')}
                             </p>
                             <p className="text-[11px] text-purple-600 mt-1 font-semibold flex items-center gap-1">
-                              <span>💰</span> Total Pagu Anggaran {headerInfo.namaSekolah || "SDIT ANNISA"}
+                              <span>💰</span> {isSpecificMonth ? `Total Pagu Anggaran Bulan ${selectedMonthView}` : `Total Pagu Anggaran ${headerInfo.namaSekolah || "SDIT ANNISA"} (1 Tahun)`}
                             </p>
                           </div>
 
